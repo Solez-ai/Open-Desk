@@ -1,4 +1,4 @@
-import { useUser, useClerk } from "@clerk/clerk-react";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,19 +11,25 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogOut, Settings, User } from "lucide-react";
 
 export default function UserMenu() {
-  const { user } = useUser();
-  const { signOut } = useClerk();
+  const { user, signOut } = useAuth();
 
-  const userInitials = user?.firstName && user?.lastName 
-    ? `${user.firstName[0]}${user.lastName[0]}`
-    : user?.emailAddresses[0]?.emailAddress[0].toUpperCase() || "U";
+  const userInitials = user?.email ? user.email[0].toUpperCase() : "U";
+  const userName = user?.user_metadata?.full_name || user?.email || "User";
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error("Sign out error:", error);
+    }
+  };
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-10 w-10 rounded-full">
           <Avatar className="h-10 w-10">
-            <AvatarImage src={user?.imageUrl} alt={user?.fullName || "User"} />
+            <AvatarImage src={user?.user_metadata?.avatar_url} alt={userName} />
             <AvatarFallback>{userInitials}</AvatarFallback>
           </Avatar>
         </Button>
@@ -31,11 +37,9 @@ export default function UserMenu() {
       <DropdownMenuContent className="w-56" align="end" forceMount>
         <div className="flex items-center justify-start gap-2 p-2">
           <div className="flex flex-col space-y-1 leading-none">
-            {user?.fullName && (
-              <p className="font-medium">{user.fullName}</p>
-            )}
+            <p className="font-medium">{userName}</p>
             <p className="w-[200px] truncate text-sm text-muted-foreground">
-              {user?.emailAddresses[0]?.emailAddress}
+              {user?.email}
             </p>
           </div>
         </div>
@@ -51,7 +55,7 @@ export default function UserMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="text-red-600 focus:text-red-600"
-          onClick={() => signOut()}
+          onClick={handleSignOut}
         >
           <LogOut className="mr-2 h-4 w-4" />
           <span>Log out</span>

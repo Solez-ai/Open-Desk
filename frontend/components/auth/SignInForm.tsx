@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useSignIn } from "@clerk/clerk-react";
+import { useAuth } from "../../contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,7 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 export default function SignInForm() {
-  const { signIn, setActive, isLoaded } = useSignIn();
+  const { signIn } = useAuth();
   const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -20,29 +20,24 @@ export default function SignInForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isLoaded) return;
     
     setIsLoading(true);
     setError("");
 
     try {
-      const result = await signIn.create({
-        identifier: email,
-        password,
-      });
+      const { error } = await signIn(email, password);
 
-      if (result.status === "complete") {
-        await setActive({ session: result.createdSessionId });
+      if (error) {
+        setError(error.message || "Failed to sign in. Please try again.");
+      } else {
         toast({
           title: "Welcome back!",
           description: "You have successfully signed in.",
         });
-      } else {
-        setError("Sign in incomplete. Please try again.");
       }
     } catch (err: any) {
       console.error("Sign in error:", err);
-      setError(err.errors?.[0]?.message || "Failed to sign in. Please try again.");
+      setError("Failed to sign in. Please try again.");
     } finally {
       setIsLoading(false);
     }

@@ -1,11 +1,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { createClient, type SupabaseClient, type RealtimeChannel } from "@supabase/supabase-js";
-import { useAuth } from "@clerk/clerk-react";
 import { supabaseUrl, supabaseAnonKey } from "../config";
 
 interface SupabaseContextType {
   supabase: SupabaseClient | null;
-  isConnected: boolean;
   subscribeToSession: (sessionId: string, callbacks: SessionCallbacks) => () => void;
 }
 
@@ -20,8 +18,6 @@ const SupabaseContext = createContext<SupabaseContextType | undefined>(undefined
 
 export function SupabaseProvider({ children }: { children: ReactNode }) {
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const { getToken, isSignedIn } = useAuth();
 
   useEffect(() => {
     if (!supabaseUrl || !supabaseAnonKey) {
@@ -31,8 +27,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
     const client = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
-        autoRefreshToken: false,
-        persistSession: false,
+        autoRefreshToken: true,
+        persistSession: true,
       },
       realtime: {
         params: {
@@ -42,29 +38,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     });
 
     setSupabase(client);
-
-    const setupAuth = async () => {
-      if (isSignedIn) {
-        try {
-          const token = await getToken();
-          if (token) {
-            await client.auth.setSession({
-              access_token: token,
-              refresh_token: "",
-            });
-            setIsConnected(true);
-          }
-        } catch (error) {
-          console.error("Failed to authenticate with Supabase:", error);
-        }
-      } else {
-        await client.auth.signOut();
-        setIsConnected(false);
-      }
-    };
-
-    setupAuth();
-  }, [isSignedIn, getToken]);
+  }, []);
 
   const subscribeToSession = (sessionId: string, callbacks: SessionCallbacks) => {
     if (!supabase) return () => {};
@@ -116,7 +90,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <SupabaseContext.Provider value={{ supabase, isConnected, subscribeToSession }}>
+    <SupabaseContext.Provider value={{ supabase, subscribeToSession }}>
       {children}
     </SupabaseContext.Provider>
   );

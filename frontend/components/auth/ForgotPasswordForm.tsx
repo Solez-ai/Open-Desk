@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useSignIn } from "@clerk/clerk-react";
+import { useAuth } from "../../contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,7 @@ import { Loader2, ArrowLeft } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 export default function ForgotPasswordForm() {
-  const { signIn, isLoaded } = useSignIn();
+  const { resetPassword } = useAuth();
   const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -19,25 +19,25 @@ export default function ForgotPasswordForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isLoaded) return;
 
     setIsLoading(true);
     setError("");
 
     try {
-      await signIn.create({
-        strategy: "reset_password_email_code",
-        identifier: email,
-      });
+      const { error } = await resetPassword(email);
       
-      setEmailSent(true);
-      toast({
-        title: "Reset email sent",
-        description: "Check your email for password reset instructions.",
-      });
+      if (error) {
+        setError(error.message || "Failed to send reset email. Please try again.");
+      } else {
+        setEmailSent(true);
+        toast({
+          title: "Reset email sent",
+          description: "Check your email for password reset instructions.",
+        });
+      }
     } catch (err: any) {
       console.error("Password reset error:", err);
-      setError(err.errors?.[0]?.message || "Failed to send reset email. Please try again.");
+      setError("Failed to send reset email. Please try again.");
     } finally {
       setIsLoading(false);
     }

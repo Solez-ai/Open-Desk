@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useSignUp } from "@clerk/clerk-react";
+import { useAuth } from "../../contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,7 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 export default function SignUpForm() {
-  const { signUp, setActive, isLoaded } = useSignUp();
+  const { signUp } = useAuth();
   const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,15 +19,18 @@ export default function SignUpForm() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [pendingVerification, setPendingVerification] = useState(false);
-  const [code, setCode] = useState("");
+  const [emailSent, setEmailSent] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isLoaded) return;
 
     if (password !== confirmPassword) {
       setError("Passwords do not match");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters long");
       return;
     }
 
@@ -35,95 +38,52 @@ export default function SignUpForm() {
     setError("");
 
     try {
-      await signUp.create({
-        emailAddress: email,
-        password,
-      });
+      const { error } = await signUp(email, password);
 
-      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-      setPendingVerification(true);
-    } catch (err: any) {
-      console.error("Sign up error:", err);
-      setError(err.errors?.[0]?.message || "Failed to create account. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleVerification = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isLoaded) return;
-
-    setIsLoading(true);
-    setError("");
-
-    try {
-      const completeSignUp = await signUp.attemptEmailAddressVerification({
-        code,
-      });
-
-      if (completeSignUp.status === "complete") {
-        await setActive({ session: completeSignUp.createdSessionId });
-        toast({
-          title: "Welcome to OpenDesk!",
-          description: "Your account has been created successfully.",
-        });
+      if (error) {
+        setError(error.message || "Failed to create account. Please try again.");
       } else {
-        setError("Verification incomplete. Please try again.");
+        setEmailSent(true);
+        toast({
+          title: "Check your email",
+          description: "We've sent you a confirmation link to complete your registration.",
+        });
       }
     } catch (err: any) {
-      console.error("Verification error:", err);
-      setError(err.errors?.[0]?.message || "Invalid verification code. Please try again.");
+      console.error("Sign up error:", err);
+      setError("Failed to create account. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (pendingVerification) {
+  if (emailSent) {
     return (
       <Card>
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl">Verify your email</CardTitle>
+          <CardTitle className="text-2xl">Check your email</CardTitle>
           <CardDescription>
-            We've sent a verification code to {email}
+            We've sent a confirmation link to {email}
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleVerification} className="space-y-4">
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            
-            <div className="space-y-2">
-              <Label htmlFor="code">Verification Code</Label>
-              <Input
-                id="code"
-                placeholder="Enter verification code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                required
-                disabled={isLoading}
-              />
+        <CardContent className="space-y-4">
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground mb-4">
+              Click the link in your email to activate your account. You can then sign in.
+            </p>
+            <p className="text-sm text-muted-foreground mb-4">
+              Didn't receive the email? Check your spam folder.
+            </p>
+          </div>
+          
+          <div className="text-center">
+            <div className="text-sm text-muted-foreground">
+              Already activated your account?{" "}
+              <Link to="/auth/sign-in" className="text-primary hover:underline">
+                Sign in
+              </Link>
             </div>
-
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Verify Email
-            </Button>
-
-            <div className="text-center">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setPendingVerification(false)}
-                disabled={isLoading}
-              >
-                Back to sign up
-              </Button>
-            </div>
-          </form>
+          </div>
         </CardContent>
       </Card>
     );
@@ -169,7 +129,7 @@ export default function SignUpForm() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 disabled={isLoading}
-                minLength={8}
+                minLength={6}
               />
               <Button
                 type="button"
@@ -195,7 +155,7 @@ export default function SignUpForm() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
                 disabled={isLoading}
-                minLength={8}
+                minLength={6}
               />
               <Button
                 type="button"

@@ -1,14 +1,14 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import { useAuth } from "@clerk/clerk-react";
+import { useAuth } from "../contexts/AuthContext";
 import AuthPage from "./auth/AuthPage";
 import Dashboard from "./dashboard/Dashboard";
 import SessionRoom from "./session/SessionRoom";
 import LoadingSpinner from "./ui/LoadingSpinner";
 
 export default function AppRoutes() {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { loading, isSignedIn } = useAuth();
 
-  if (!isLoaded) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <LoadingSpinner size="lg" />
