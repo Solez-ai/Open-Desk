@@ -1,7 +1,7 @@
 // Supabase configuration
 // TODO: Set these to your Supabase project credentials
-export const supabaseUrl = "";
-export const supabaseAnonKey = "";
+export const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || "";
+export const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY || "";
 
 // Application settings
 export const APP_NAME = "OpenDesk";
@@ -17,3 +17,8 @@ export const ICE_SERVERS = [
 export const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 export const HEARTBEAT_INTERVAL_MS = 30 * 1000; // 30 seconds
 export const MAX_FILE_SIZE_MB = 100;
+
+// Configuration validation
+export const isSupabaseConfigured = () => {
+  return !!(supabaseUrl && supabaseAnonKey);
+};

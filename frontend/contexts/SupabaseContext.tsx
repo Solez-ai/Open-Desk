@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { createClient, type SupabaseClient, type RealtimeChannel } from "@supabase/supabase-js";
-import { supabaseUrl, supabaseAnonKey } from "../config";
+import { supabaseUrl, supabaseAnonKey, isSupabaseConfigured } from "../config";
 
 interface SupabaseContextType {
   supabase: SupabaseClient | null;
+  isConfigured: boolean;
   subscribeToSession: (sessionId: string, callbacks: SessionCallbacks) => () => void;
 }
 
@@ -18,10 +19,12 @@ const SupabaseContext = createContext<SupabaseContextType | undefined>(undefined
 
 export function SupabaseProvider({ children }: { children: ReactNode }) {
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
+  const [isConfigured, setIsConfigured] = useState(false);
 
   useEffect(() => {
-    if (!supabaseUrl || !supabaseAnonKey) {
-      console.warn("Supabase configuration missing");
+    if (!isSupabaseConfigured()) {
+      console.warn("Supabase configuration missing. Please set REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY environment variables or update config.ts");
+      setIsConfigured(false);
       return;
     }
 
@@ -38,6 +41,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     });
 
     setSupabase(client);
+    setIsConfigured(true);
   }, []);
 
   const subscribeToSession = (sessionId: string, callbacks: SessionCallbacks) => {
@@ -90,7 +94,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <SupabaseContext.Provider value={{ supabase, subscribeToSession }}>
+    <SupabaseContext.Provider value={{ supabase, isConfigured, subscribeToSession }}>
       {children}
     </SupabaseContext.Provider>
   );

@@ -4,9 +4,10 @@ import AuthPage from "./auth/AuthPage";
 import Dashboard from "./dashboard/Dashboard";
 import SessionRoom from "./session/SessionRoom";
 import LoadingSpinner from "./ui/LoadingSpinner";
+import ConfigurationError from "./ui/ConfigurationError";
 
 export default function AppRoutes() {
-  const { loading, isSignedIn } = useAuth();
+  const { loading, isSignedIn, isConfigured } = useAuth();
 
   if (loading) {
     return (
@@ -14,6 +15,10 @@ export default function AppRoutes() {
         <LoadingSpinner size="lg" />
       </div>
     );
+  }
+
+  if (!isConfigured) {
+    return <ConfigurationError />;
   }
 
   return (
