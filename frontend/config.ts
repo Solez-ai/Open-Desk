@@ -1,7 +1,8 @@
 // Supabase configuration
-// TODO: Set these to your Supabase project credentials
-export const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || "";
-export const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY || "";
+// These are exposed via Vite's `import.meta.env`
+// see: https://vitejs.dev/guide/env-and-mode.html
+export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
+export const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 
 // Application settings
 export const APP_NAME = "OpenDesk";

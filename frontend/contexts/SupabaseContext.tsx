@@ -23,7 +23,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
-      console.warn("Supabase configuration missing. Please set REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY environment variables or update config.ts");
+      console.warn("Supabase configuration missing. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY environment variables or update config.ts");
       setIsConfigured(false);
       return;
     }

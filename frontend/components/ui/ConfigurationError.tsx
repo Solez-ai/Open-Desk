@@ -49,10 +49,10 @@ export default function ConfigurationError() {
                 <div className="mt-2 space-y-2">
                   <div className="bg-background p-3 rounded border">
                     <p className="font-medium">Option A: Environment Variables</p>
-                    <p className="text-xs text-muted-foreground mt-1">Set these environment variables:</p>
+                    <p className="text-xs text-muted-foreground mt-1">Set these environment variables in a <code>.env</code> file in the <code>frontend</code> directory:</p>
                     <code className="block mt-1 text-xs bg-gray-100 p-2 rounded">
-                      REACT_APP_SUPABASE_URL=your_project_url<br/>
-                      REACT_APP_SUPABASE_ANON_KEY=your_anon_key
+                      VITE_SUPABASE_URL=your_project_url<br/>
+                      VITE_SUPABASE_ANON_KEY=your_anon_key
                     </code>
                   </div>
                   <div className="bg-background p-3 rounded border">
