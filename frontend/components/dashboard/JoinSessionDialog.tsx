@@ -21,10 +21,10 @@ interface JoinSessionDialogProps {
   onSuccess: () => void;
 }
 
-export default function JoinSessionDialog({ 
-  open, 
-  onOpenChange, 
-  onSuccess 
+export default function JoinSessionDialog({
+  open,
+  onOpenChange,
+  onSuccess,
 }: JoinSessionDialogProps) {
   const [sessionCode, setSessionCode] = useState("");
   const [role, setRole] = useState<"host" | "controller">("controller");
@@ -35,7 +35,7 @@ export default function JoinSessionDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!sessionCode.trim()) {
       toast({
         variant: "destructive",
@@ -61,7 +61,7 @@ export default function JoinSessionDialog({
       onSuccess();
       onOpenChange(false);
       navigate(`/session/${result.session.id}`);
-      
+
       // Reset form
       setSessionCode("");
       setRole("controller");
@@ -79,26 +79,29 @@ export default function JoinSessionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md border-emerald-500/10">
         <DialogHeader>
-          <DialogTitle>Join Session</DialogTitle>
-          <DialogDescription>
-            Enter a session code to join an existing remote desktop session.
+          <DialogTitle className="tracking-tight">Join Session</DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            Enter a code to join. Green accents will confirm key steps.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2">
             <Label htmlFor="sessionCode">Session Code</Label>
             <Input
               id="sessionCode"
-              placeholder="Enter 6-digit code"
+              placeholder="Enter 6-character code"
               value={sessionCode}
               onChange={(e) => setSessionCode(e.target.value.toUpperCase())}
               disabled={isLoading}
               maxLength={6}
-              className="text-center text-lg font-mono"
+              className="text-center text-lg font-mono tracking-widest focus:ring-emerald-500/30"
             />
+            <p className="text-xs text-muted-foreground">
+              Codes are not case sensitive.
+            </p>
           </div>
 
           <div className="space-y-3">
@@ -107,42 +110,71 @@ export default function JoinSessionDialog({
               value={role}
               onValueChange={(value: "host" | "controller") => setRole(value)}
               disabled={isLoading}
+              className="grid grid-cols-2 gap-2"
             >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="controller" id="controller" />
-                <Label htmlFor="controller" className="cursor-pointer">
+              <label
+                htmlFor="controller"
+                className={`cursor-pointer rounded-lg border p-3 ${
+                  role === "controller"
+                    ? "border-emerald-500/30 bg-emerald-500/5"
+                    : "border-border"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem
+                    value="controller"
+                    id="controller"
+                    className="data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-600"
+                  />
                   <div>
-                    <div className="font-medium">Controller</div>
-                    <div className="text-sm text-muted-foreground">
+                    <div className="font-medium text-sm">Controller</div>
+                    <div className="text-xs text-muted-foreground">
                       Control someone else's computer
                     </div>
                   </div>
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="host" id="host" />
-                <Label htmlFor="host" className="cursor-pointer">
+                </div>
+              </label>
+
+              <label
+                htmlFor="host"
+                className={`cursor-pointer rounded-lg border p-3 ${
+                  role === "host"
+                    ? "border-emerald-500/30 bg-emerald-500/5"
+                    : "border-border"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem
+                    value="host"
+                    id="host"
+                    className="data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-600"
+                  />
                   <div>
-                    <div className="font-medium">Host</div>
-                    <div className="text-sm text-muted-foreground">
-                      Share your computer screen
+                    <div className="font-medium text-sm">Host</div>
+                    <div className="text-xs text-muted-foreground">
+                      Share your screen
                     </div>
                   </div>
-                </Label>
-              </div>
+                </div>
+              </label>
             </RadioGroup>
           </div>
 
-          <div className="flex justify-end space-x-3">
+          <div className="flex justify-end gap-3">
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
               disabled={isLoading}
+              className="border-emerald-500/20 hover:bg-emerald-500/10"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isLoading}>
+            <Button
+              type="submit"
+              disabled={isLoading}
+              className="bg-emerald-600 hover:bg-emerald-600/90 text-white"
+            >
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Join Session
             </Button>

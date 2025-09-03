@@ -1,16 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
-import { 
-  Play, 
-  Copy, 
-  MoreVertical, 
-  Clock, 
-  Users, 
+import {
+  Play,
+  Copy,
+  MoreVertical,
+  Clock,
+  Eye,
   Shield,
   Trash2,
-  Eye,
-  Settings,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,16 +35,42 @@ export default function SessionCard({ session, onRefresh }: SessionCardProps) {
   const backend = useBackend();
   const { toast } = useToast();
 
-  const getStatusBadge = () => {
+  const statusChip = () => {
+    const base =
+      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs";
+    const dot = (cls: string) => (
+      <span className={`h-1.5 w-1.5 rounded-full ${cls}`} />
+    );
+
     switch (session.status) {
       case "active":
-        return <Badge className="bg-green-100 text-green-800 border-green-200">Active</Badge>;
+        return (
+          <span className={`${base} border-emerald-500/30 text-emerald-600 dark:text-emerald-400`}>
+            {dot("bg-emerald-500")}
+            Active
+          </span>
+        );
       case "pending":
-        return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Pending</Badge>;
+        return (
+          <span className={`${base} border-emerald-500/20 text-foreground`}>
+            {dot("bg-emerald-400/70")}
+            Pending
+          </span>
+        );
       case "ended":
-        return <Badge variant="secondary">Ended</Badge>;
+        return (
+          <span className={`${base} border-border text-muted-foreground`}>
+            {dot("bg-muted-foreground/40")}
+            Ended
+          </span>
+        );
       case "rejected":
-        return <Badge variant="destructive">Rejected</Badge>;
+        return (
+          <span className={`${base} border-destructive/30 text-destructive`}>
+            {dot("bg-destructive")}
+            Rejected
+          </span>
+        );
       default:
         return <Badge variant="outline">{session.status}</Badge>;
     }
@@ -75,7 +99,7 @@ export default function SessionCard({ session, onRefresh }: SessionCardProps) {
   const handleCopyCode = () => {
     navigator.clipboard.writeText(session.code);
     toast({
-      title: "Copied!",
+      title: "Copied",
       description: "Session code copied to clipboard.",
     });
   };
@@ -86,7 +110,7 @@ export default function SessionCard({ session, onRefresh }: SessionCardProps) {
       await backend.session.terminateSession({ sessionId: session.id });
       toast({
         title: "Session terminated",
-        description: "The session has been ended successfully.",
+        description: "The session has been ended.",
       });
       onRefresh();
     } catch (error) {
@@ -105,34 +129,34 @@ export default function SessionCard({ session, onRefresh }: SessionCardProps) {
   const canTerminate = session.status === "active" || session.status === "pending";
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card className="group transition-colors border-emerald-500/10 hover:border-emerald-500/20">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="space-y-1">
-            <h3 className="font-semibold text-lg">
+            <h3 className="font-medium text-base">
               {session.name || `Session ${session.code}`}
             </h3>
-            <div className="flex items-center space-x-2">
-              {getStatusBadge()}
+            <div className="flex items-center gap-2">
+              {statusChip()}
               {session.isPublic && (
-                <Badge variant="outline" className="text-xs">
-                  <Eye className="h-3 w-3 mr-1" />
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <Eye className="h-3 w-3 text-emerald-500" />
                   Public
-                </Badge>
+                </span>
               )}
               {session.allowClipboard && (
-                <Badge variant="outline" className="text-xs">
-                  <Shield className="h-3 w-3 mr-1" />
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <Shield className="h-3 w-3 text-emerald-500" />
                   Clipboard
-                </Badge>
+                </span>
               )}
             </div>
           </div>
-          
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm">
-                <MoreVertical className="h-4 w-4" />
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                <MoreVertical className="h-4 w-4 text-muted-foreground" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -148,7 +172,7 @@ export default function SessionCard({ session, onRefresh }: SessionCardProps) {
               )}
               <DropdownMenuSeparator />
               {canTerminate && (
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   onClick={handleTerminate}
                   className="text-destructive focus:text-destructive"
                 >
@@ -160,33 +184,34 @@ export default function SessionCard({ session, onRefresh }: SessionCardProps) {
           </DropdownMenu>
         </div>
       </CardHeader>
-      
+
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <div className="flex items-center space-x-1">
-            <span className="font-mono text-lg font-semibold text-foreground">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-lg font-semibold text-foreground tracking-wide">
               {session.code}
             </span>
           </div>
-          <div className="flex items-center space-x-1">
-            <Clock className="h-4 w-4" />
+          <div className="flex items-center gap-1">
+            <Clock className="h-4 w-4 text-emerald-500" />
             <span>{formatDistanceToNow(session.createdAt, { addSuffix: true })}</span>
           </div>
         </div>
 
         {canJoin && (
-          <div className="flex space-x-2">
-            <Button 
-              className="flex-1" 
+          <div className="flex gap-2">
+            <Button
+              className="flex-1 bg-emerald-600 hover:bg-emerald-600/90 text-white"
               onClick={handleJoinSession}
               disabled={isLoading}
             >
               <Play className="h-4 w-4 mr-2" />
-              Join Session
+              Join
             </Button>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
+              className="border-emerald-500/20 hover:bg-emerald-500/10"
               onClick={handleCopyCode}
             >
               <Copy className="h-4 w-4" />

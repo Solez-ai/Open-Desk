@@ -21,10 +21,10 @@ interface CreateSessionDialogProps {
   onSuccess: () => void;
 }
 
-export default function CreateSessionDialog({ 
-  open, 
-  onOpenChange, 
-  onSuccess 
+export default function CreateSessionDialog({
+  open,
+  onOpenChange,
+  onSuccess,
 }: CreateSessionDialogProps) {
   const [name, setName] = useState("");
   const [allowClipboard, setAllowClipboard] = useState(false);
@@ -47,13 +47,13 @@ export default function CreateSessionDialog({
 
       toast({
         title: "Session created",
-        description: `Session ${result.session.code} has been created successfully.`,
+        description: `Session ${result.session.code} has been created.`,
       });
 
       onSuccess();
       onOpenChange(false);
       navigate(`/session/${result.session.id}`);
-      
+
       // Reset form
       setName("");
       setAllowClipboard(false);
@@ -72,45 +72,53 @@ export default function CreateSessionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md border-emerald-500/10">
         <DialogHeader>
-          <DialogTitle>Create New Session</DialogTitle>
-          <DialogDescription>
-            Create a new remote desktop session that others can join.
+          <DialogTitle className="tracking-tight">
+            Create New Session
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            Keep it simple. Subtle green accents guide you through.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2">
-            <Label htmlFor="name">Session Name (Optional)</Label>
+            <Label htmlFor="name">Session Name (optional)</Label>
             <Input
               id="name"
               placeholder="e.g., Help with computer setup"
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={isLoading}
+              className="focus:ring-emerald-500/30"
             />
+            <p className="text-xs text-muted-foreground">
+              A friendly label shown in your dashboard.
+            </p>
           </div>
 
           <div className="space-y-3">
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-2">
               <Checkbox
                 id="allowClipboard"
                 checked={allowClipboard}
                 onCheckedChange={setAllowClipboard}
                 disabled={isLoading}
+                className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
               />
               <Label htmlFor="allowClipboard" className="text-sm">
                 Allow clipboard synchronization
               </Label>
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-2">
               <Checkbox
                 id="isPublic"
                 checked={isPublic}
                 onCheckedChange={setIsPublic}
                 disabled={isLoading}
+                className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
               />
               <Label htmlFor="isPublic" className="text-sm">
                 Make session public (anyone can join)
@@ -118,16 +126,21 @@ export default function CreateSessionDialog({
             </div>
           </div>
 
-          <div className="flex justify-end space-x-3">
+          <div className="flex justify-end gap-3">
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
               disabled={isLoading}
+              className="border-emerald-500/20 hover:bg-emerald-500/10"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isLoading}>
+            <Button
+              type="submit"
+              disabled={isLoading}
+              className="bg-emerald-600 hover:bg-emerald-600/90 text-white"
+            >
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Create Session
             </Button>
