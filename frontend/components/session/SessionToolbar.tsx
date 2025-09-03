@@ -8,7 +8,7 @@ import {
   Maximize,
   Minimize,
   Monitor,
-  Mouse,
+  MousePointer,
   Keyboard,
   Copy,
   Upload,
@@ -33,6 +33,8 @@ interface SessionToolbarProps {
   onToggleParticipants: () => void;
   onToggleFullScreen: () => void;
   isFullScreen: boolean;
+  isControlEnabled: boolean;
+  onToggleControl: () => void;
 }
 
 export default function SessionToolbar({
@@ -43,10 +45,10 @@ export default function SessionToolbar({
   onToggleParticipants,
   onToggleFullScreen,
   isFullScreen,
+  isControlEnabled,
+  onToggleControl,
 }: SessionToolbarProps) {
   const navigate = useNavigate();
-  const [mouseEnabled, setMouseEnabled] = useState(true);
-  const [keyboardEnabled, setKeyboardEnabled] = useState(true);
 
   return (
     <TooltipProvider>
@@ -93,30 +95,15 @@ export default function SessionToolbar({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  variant={mouseEnabled ? "default" : "outline"}
+                  variant={isControlEnabled ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setMouseEnabled(!mouseEnabled)}
+                  onClick={onToggleControl}
                 >
-                  <Mouse className="h-4 w-4" />
+                  <MousePointer className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>{mouseEnabled ? "Disable" : "Enable"} mouse control</p>
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={keyboardEnabled ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setKeyboardEnabled(!keyboardEnabled)}
-                >
-                  <Keyboard className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{keyboardEnabled ? "Disable" : "Enable"} keyboard input</p>
+                <p>{isControlEnabled ? "Disable" : "Enable"} remote control</p>
               </TooltipContent>
             </Tooltip>
 
@@ -141,17 +128,6 @@ export default function SessionToolbar({
               </TooltipTrigger>
               <TooltipContent>
                 <p>Upload file</p>
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Download className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Download files</p>
               </TooltipContent>
             </Tooltip>
           </div>
@@ -204,17 +180,6 @@ export default function SessionToolbar({
               </TooltipTrigger>
               <TooltipContent>
                 <p>{isFullScreen ? "Exit" : "Enter"} fullscreen</p>
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Settings className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Session settings</p>
               </TooltipContent>
             </Tooltip>
 

@@ -8,10 +8,10 @@ interface SessionContextType {
   connectionQuality: "excellent" | "good" | "poor" | "offline";
   setCurrentSession: (session: Session | null) => void;
   setParticipants: (participants: Participant[]) => void;
-  setIsConnected: (connected: boolean) => void;
-  setConnectionQuality: (quality: "excellent" | "good" | "poor" | "offline") => void;
   updateParticipant: (participant: Participant) => void;
   removeParticipant: (userId: string) => void;
+  setIsConnected: (connected: boolean) => void;
+  setConnectionQuality: (quality: "excellent" | "good" | "poor" | "offline") => void;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
@@ -24,7 +24,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const updateParticipant = useCallback((participant: Participant) => {
     setParticipants(prev => {
-      const index = prev.findIndex(p => p.userId === participant.userId);
+      const index = prev.findIndex(p => p.id === participant.id);
       if (index >= 0) {
         const newParticipants = [...prev];
         newParticipants[index] = participant;
@@ -46,10 +46,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       connectionQuality,
       setCurrentSession,
       setParticipants,
-      setIsConnected,
-      setConnectionQuality,
       updateParticipant,
       removeParticipant,
+      setIsConnected,
+      setConnectionQuality,
     }}>
       {children}
     </SessionContext.Provider>
