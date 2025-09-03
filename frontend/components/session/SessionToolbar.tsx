@@ -1,14 +1,11 @@
-import { useState } from "react";
 import {
   ArrowLeft,
   Users,
   MessageCircle,
-  Settings,
   PhoneOff,
   Maximize,
   Minimize,
   MousePointer,
-  Keyboard,
   Copy,
   Upload,
   Download,
@@ -23,6 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import type { Session } from "~backend/session/types";
+import { useRef } from "react";
 import { useSession } from "../../contexts/SessionContext";
 
 interface SessionToolbarProps {
@@ -35,6 +33,9 @@ interface SessionToolbarProps {
   isFullScreen: boolean;
   isControlEnabled: boolean;
   onToggleControl: () => void;
+  onUploadFile: (file: File) => void;
+  receivedCount: number;
+  onToggleTransfers: () => void;
 }
 
 export default function SessionToolbar({
@@ -47,10 +48,26 @@ export default function SessionToolbar({
   isFullScreen,
   isControlEnabled,
   onToggleControl,
+  onUploadFile,
+  receivedCount,
+  onToggleTransfers,
 }: SessionToolbarProps) {
   const navigate = useNavigate();
   const { participants } = useSession();
   const joinedCount = participants.filter((p) => p.status === "joined").length;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const openFilePicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onUploadFile(file);
+      e.target.value = "";
+    }
+  };
 
   return (
     <TooltipProvider>
@@ -122,14 +139,38 @@ export default function SessionToolbar({
               </Tooltip>
             )}
 
+            <input
+              ref={fileInputRef}
+              type="file"
+              onChange={handleInputChange}
+              className="hidden"
+            />
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" onClick={openFilePicker}>
                   <Upload className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Upload file</p>
+                <p>Upload file to peer(s)</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="relative">
+                  <Button variant="outline" size="sm" onClick={onToggleTransfers}>
+                    <Download className="h-4 w-4" />
+                  </Button>
+                  {receivedCount > 0 && (
+                    <span className="absolute -top-1 -right-1 inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-emerald-600 text-white text-[10px]">
+                      {receivedCount}
+                    </span>
+                  )}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Show received files</p>
               </TooltipContent>
             </Tooltip>
           </div>

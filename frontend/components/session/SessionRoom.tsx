@@ -14,7 +14,8 @@ import ParticipantsList from "./ParticipantsList";
 import ConnectionStatus from "./ConnectionStatus";
 import SessionToolbar from "./SessionToolbar";
 import LoadingSpinner from "../ui/LoadingSpinner";
-import type { ControlMessage, SignalPayload } from "../../webrtc/types";
+import TransfersPanel, { type ReceivedFile } from "./TransfersPanel";
+import type { ControlMessage, SignalPayload, FileMetaMessage, FileChunkMessage, FileCompleteMessage } from "../../webrtc/types";
 import type { Session as SessionData, Participant } from "~backend/session/types";
 import { ICE_SERVERS } from "../../config";
 
@@ -22,6 +23,18 @@ type PCRecord = {
   pc: RTCPeerConnection;
   dc: RTCDataChannel | null;
   remoteStream: MediaStream | null;
+};
+
+type SupabaseParticipantRow = {
+  id: string;
+  session_id: string;
+  user_id: string;
+  role: "host" | "controller";
+  status: "joined" | "left";
+  connected_at: string | null;
+  disconnected_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export default function SessionRoom() {
@@ -44,6 +57,7 @@ export default function SessionRoom() {
 
   const [chatOpen, setChatOpen] = useState(false);
   const [participantsOpen, setParticipantsOpen] = useState(false);
+  const [transfersOpen, setTransfersOpen] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isControlEnabled, setIsControlEnabled] = useState(true);
 
@@ -59,6 +73,15 @@ export default function SessionRoom() {
   // Offers received before host starts screen share (requires user gesture).
   const pendingOffersRef = useRef<Map<string, RTCSessionDescriptionInit>>(new Map());
 
+  // File transfer assembly state
+  const incomingFilesRef = useRef<Map<string, {
+    meta: FileMetaMessage;
+    chunks: Uint8Array[];
+    receivedBytes: number;
+    totalChunks?: number;
+  }>>(new Map());
+  const [receivedFiles, setReceivedFiles] = useState<ReceivedFile[]>([]);
+
   const myParticipant = participants.find((p) => p.userId === user?.id);
   const myRole = myParticipant?.role;
 
@@ -66,6 +89,19 @@ export default function SessionRoom() {
     () => participants.find((p) => p.role === "host" && p.status === "joined"),
     [participants]
   );
+
+  // Helpers to map Supabase row -> Participant type
+  const mapParticipant = (row: SupabaseParticipantRow): Participant => ({
+    id: row.id,
+    sessionId: row.session_id,
+    userId: row.user_id,
+    role: row.role,
+    status: row.status,
+    connectedAt: row.connected_at ? new Date(row.connected_at) : null,
+    disconnectedAt: row.disconnected_at ? new Date(row.disconnected_at) : null,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  });
 
   // API helpers
   const publishSignal = useCallback(
@@ -120,29 +156,6 @@ export default function SessionRoom() {
     }
   }, [sessionDetail, setCurrentSession, setParticipants]);
 
-  // Handle incoming data messages (controller -> host)
-  const handleDataMessage = useCallback(
-    (message: ControlMessage) => {
-      if (myRole !== "host") return;
-
-      // For now, visualize cursor; In a real host agent, events would be handled natively.
-      switch (message.type) {
-        case "mousemove":
-          // Intentionally not visualizing on host view; could be extended.
-          break;
-        case "mousedown":
-        case "mouseup":
-        case "scroll":
-        case "keydown":
-        case "keyup":
-        case "clipboard":
-          // Stub: handle additional control messages if host has an agent.
-          break;
-      }
-    },
-    [myRole]
-  );
-
   // Map connection state to a user-friendly quality label
   const updateConnectionIndicators = useCallback((state: RTCPeerConnectionState) => {
     switch (state) {
@@ -166,6 +179,87 @@ export default function SessionRoom() {
         break;
     }
   }, [setConnectionQuality, setIsConnected]);
+
+  // Handle incoming data messages (controller -> host and file transfers)
+  const handleDataMessage = useCallback(
+    async (message: ControlMessage) => {
+      // File transfer handling
+      if (message.type === "file-meta") {
+        const meta = message as FileMetaMessage;
+        incomingFilesRef.current.set(meta.id, {
+          meta,
+          chunks: [],
+          receivedBytes: 0,
+        });
+        toast({
+          title: "Incoming file",
+          description: `Receiving "${meta.name}" (${Math.round(meta.size / 1024)} KB)`,
+        });
+        return;
+      }
+
+      if (message.type === "file-chunk") {
+        const chunkMsg = message as FileChunkMessage;
+        const entry = incomingFilesRef.current.get(chunkMsg.id);
+        if (!entry) return;
+        const bytes = base64ToUint8Array(chunkMsg.dataB64);
+        entry.chunks.push(bytes);
+        entry.receivedBytes += bytes.byteLength;
+        return;
+      }
+
+      if (message.type === "file-complete") {
+        const done = message as FileCompleteMessage;
+        const entry = incomingFilesRef.current.get(done.id);
+        if (!entry) return;
+
+        const blob = new Blob(entry.chunks, { type: entry.meta.mime || "application/octet-stream" });
+        const rf: ReceivedFile = {
+          id: entry.meta.id,
+          name: entry.meta.name,
+          size: entry.meta.size,
+          mime: entry.meta.mime,
+          fromUserId: entry.meta.fromUserId,
+          blob,
+          receivedAt: new Date(),
+        };
+        setReceivedFiles((prev) => [rf, ...prev]);
+        incomingFilesRef.current.delete(done.id);
+
+        // Auto-download
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = rf.name || "download";
+        a.click();
+        URL.revokeObjectURL(url);
+
+        toast({
+          title: "File received",
+          description: `Downloaded "${rf.name}"`,
+        });
+        return;
+      }
+
+      // Remote control events (host-side)
+      if (myRole !== "host") return;
+
+      switch (message.type) {
+        case "mousemove":
+          // Could visualize cursor for host if showing preview; currently not rendered.
+          break;
+        case "mousedown":
+        case "mouseup":
+        case "scroll":
+        case "keydown":
+        case "keyup":
+        case "clipboard":
+          // Stub for integration with a native host agent.
+          break;
+      }
+    },
+    [myRole, toast]
+  );
 
   // Create or get a peer connection with a remote user
   const ensurePeerConnection = useCallback(
@@ -372,31 +466,109 @@ export default function SessionRoom() {
     toast({ title: "Screen sharing stopped" });
   }, [localStream, toast]);
 
-  // Send data messages (controller -> host)
+  // Send data messages (controller -> host) and file transfers
+  const sendDataTo = useCallback((remoteUserId: string, message: ControlMessage) => {
+    const rec = connectionsRef.current.get(remoteUserId);
+    if (rec?.dc && rec.dc.readyState === "open") {
+      rec.dc.send(JSON.stringify(message));
+      return true;
+    }
+    return false;
+  }, []);
+
   const sendData = useCallback(
     (message: ControlMessage) => {
       if (!isControlEnabled) return;
-      // Controller sends to host; Host might broadcast if needed.
       if (myRole === "controller" && hostParticipant) {
-        const rec = connectionsRef.current.get(hostParticipant.userId);
-        if (rec?.dc && rec.dc.readyState === "open") {
-          rec.dc.send(JSON.stringify(message));
-        }
+        sendDataTo(hostParticipant.userId, message);
+      } else if (myRole === "host") {
+        // Host may decide to broadcast some control messages if needed.
       }
     },
-    [hostParticipant, isControlEnabled, myRole]
+    [hostParticipant, isControlEnabled, myRole, sendDataTo]
+  );
+
+  // File upload via data channel
+  const sendFile = useCallback(
+    async (file: File) => {
+      if (!user) return;
+      const id = `${user.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const chunkSize = 64 * 1024; // 64KB
+      const totalChunks = Math.ceil(file.size / chunkSize);
+
+      // Determine recipients:
+      let targets: string[] = [];
+      if (myRole === "controller" && hostParticipant) {
+        targets = [hostParticipant.userId];
+      } else if (myRole === "host") {
+        targets = participants.filter((p) => p.role === "controller" && p.status === "joined").map((p) => p.userId);
+      }
+
+      if (targets.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "No recipients",
+          description: "No connected peer to send the file to.",
+        });
+        return;
+      }
+
+      const meta: FileMetaMessage = {
+        type: "file-meta",
+        id,
+        name: file.name,
+        size: file.size,
+        mime: file.type || "application/octet-stream",
+        fromUserId: user.id,
+      };
+
+      // Send meta
+      targets.forEach((t) => sendDataTo(t, meta));
+
+      // Send chunks
+      let offset = 0;
+      let index = 0;
+      while (offset < file.size) {
+        const slice = file.slice(offset, offset + chunkSize);
+        const arrayBuf = await slice.arrayBuffer();
+        const dataB64 = bufferToBase64(arrayBuf);
+        const chunkMsg: FileChunkMessage = {
+          type: "file-chunk",
+          id,
+          index,
+          dataB64,
+        };
+        targets.forEach((t) => sendDataTo(t, chunkMsg));
+        offset += chunkSize;
+        index++;
+      }
+
+      // Send complete
+      const complete: FileCompleteMessage = {
+        type: "file-complete",
+        id,
+        totalChunks,
+      };
+      targets.forEach((t) => sendDataTo(t, complete));
+
+      toast({
+        title: "File sent",
+        description: `Sent "${file.name}" to ${targets.length} recipient(s).`,
+      });
+    },
+    [hostParticipant, myRole, participants, sendDataTo, toast, user]
   );
 
   // Subscribe to realtime updates
   useEffect(() => {
     if (!sessionId || !user) return;
 
-    const handleNewParticipant = async (participant: Participant) => {
+    const handleNewParticipant = async (raw: any) => {
+      const participant = mapParticipant(raw as SupabaseParticipantRow);
       updateParticipant(participant);
 
       // If controller and a host joined, initiate offer to host.
       if (myRole === "controller" && participant.role === "host" && participant.status === "joined") {
-        // Avoid duplicate offers if connection already exists.
         const exists = connectionsRef.current.has(participant.userId);
         if (!exists) {
           await createAndSendOfferTo(participant.userId);
@@ -532,6 +704,27 @@ export default function SessionRoom() {
     }
   };
 
+  // Utils for base64 <-> bytes
+  function bufferToBase64(buf: ArrayBuffer) {
+    const bytes = new Uint8Array(buf);
+    let binary = "";
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+
+  function base64ToUint8Array(b64: string) {
+    const binary = atob(b64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+
   if (isLoadingSession) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -600,6 +793,9 @@ export default function SessionRoom() {
         isFullScreen={isFullScreen}
         isControlEnabled={isControlEnabled}
         onToggleControl={() => setIsControlEnabled(!isControlEnabled)}
+        onUploadFile={sendFile}
+        receivedCount={receivedFiles.length}
+        onToggleTransfers={() => setTransfersOpen(!transfersOpen)}
       />
       <div className="flex h-screen pt-16">
         <div className="flex-1 relative">
@@ -613,6 +809,16 @@ export default function SessionRoom() {
         {participantsOpen && (
           <div className="w-80 border-l border-gray-700">
             <ParticipantsList participants={participants} onClose={() => setParticipantsOpen(false)} />
+          </div>
+        )}
+        {transfersOpen && (
+          <div className="w-96 border-l border-gray-700">
+            <TransfersPanel
+              files={receivedFiles}
+              onClose={() => setTransfersOpen(false)}
+              onClear={(id) => setReceivedFiles((prev) => prev.filter((f) => f.id !== id))}
+              onClearAll={() => setReceivedFiles([])}
+            />
           </div>
         )}
       </div>

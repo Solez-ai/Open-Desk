@@ -5,7 +5,10 @@ export type ControlMessageType =
   | "scroll"
   | "keydown"
   | "keyup"
-  | "clipboard";
+  | "clipboard"
+  | "file-meta"
+  | "file-chunk"
+  | "file-complete";
 
 export interface MouseMoveMessage {
   type: "mousemove";
@@ -44,12 +47,37 @@ export interface ClipboardMessage {
   content: string;
 }
 
+export interface FileMetaMessage {
+  type: "file-meta";
+  id: string; // unique file transfer id
+  name: string;
+  size: number;
+  mime?: string;
+  fromUserId: string;
+}
+
+export interface FileChunkMessage {
+  type: "file-chunk";
+  id: string; // file transfer id
+  index: number; // chunk index
+  dataB64: string; // base64 encoded chunk
+}
+
+export interface FileCompleteMessage {
+  type: "file-complete";
+  id: string; // file transfer id
+  totalChunks: number;
+}
+
 export type ControlMessage =
   | MouseMoveMessage
   | MouseDownMessage
   | MouseUpMessage
   | ScrollMessage
   | KeyMessage
-  | ClipboardMessage;
+  | ClipboardMessage
+  | FileMetaMessage
+  | FileChunkMessage
+  | FileCompleteMessage;
 
 export type SignalPayload = RTCSessionDescriptionInit | RTCIceCandidateInit;

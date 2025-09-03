@@ -30,8 +30,11 @@ export const joinSession = api<JoinSessionRequest, JoinSessionResponse>(
       ? await query.eq("id", req.sessionId)
       : await query.eq("code", normalizedCode!);
 
-    if (fErr || !rows || rows.length === 0) {
-      throw APIError.notFound("session not found", fErr ?? undefined);
+    if (fErr) {
+      throw APIError.internal("failed to lookup session", fErr);
+    }
+    if (!rows || rows.length === 0) {
+      throw APIError.notFound("No session found with that code");
     }
     const s = rows[0];
 
