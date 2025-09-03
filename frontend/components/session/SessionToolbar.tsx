@@ -7,7 +7,6 @@ import {
   PhoneOff,
   Maximize,
   Minimize,
-  Monitor,
   MousePointer,
   Keyboard,
   Copy,
@@ -67,7 +66,7 @@ export default function SessionToolbar({
             </Button>
             
             <div className="flex items-center space-x-3">
-              <Monitor className="h-5 w-5 text-blue-400" />
+              <img src="/logo.png" alt="OpenDesk Logo" className="h-5 w-5" />
               <div>
                 <h2 className="font-semibold text-white">
                   {session.name || `Session ${session.code}`}
