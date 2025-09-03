@@ -9,6 +9,9 @@ import {
   Eye,
   Shield,
   Trash2,
+  Share,
+  Link,
+  Settings,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,7 +25,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/components/ui/use-toast";
 import { useBackend } from "../../hooks/useBackend";
+import { useAuth } from "../../contexts/AuthContext";
 import type { Session } from "~backend/session/types";
+import ShareSessionDialog from "./ShareSessionDialog";
 
 interface SessionCardProps {
   session: Session;
@@ -31,9 +36,13 @@ interface SessionCardProps {
 
 export default function SessionCard({ session, onRefresh }: SessionCardProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const navigate = useNavigate();
   const backend = useBackend();
   const { toast } = useToast();
+  const { user } = useAuth();
+
+  const isOwner = session.ownerId === user?.id;
 
   const statusChip = () => {
     const base =
@@ -126,99 +135,124 @@ export default function SessionCard({ session, onRefresh }: SessionCardProps) {
   };
 
   const canJoin = session.status === "active" || session.status === "pending";
-  const canTerminate = session.status === "active" || session.status === "pending";
+  const canTerminate = isOwner && (session.status === "active" || session.status === "pending");
+  const canShare = isOwner && (session.status === "active" || session.status === "pending");
 
   return (
-    <Card className="group transition-colors border-emerald-500/10 hover:border-emerald-500/20">
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <h3 className="font-medium text-base">
-              {session.name || `Session ${session.code}`}
-            </h3>
+    <>
+      <Card className="group transition-colors border-emerald-500/10 hover:border-emerald-500/20">
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between">
+            <div className="space-y-1">
+              <h3 className="font-medium text-base">
+                {session.name || `Session ${session.code}`}
+              </h3>
+              <div className="flex items-center gap-2">
+                {statusChip()}
+                {session.isPublic && (
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                    <Eye className="h-3 w-3 text-emerald-500" />
+                    Public
+                  </span>
+                )}
+                {session.allowClipboard && (
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                    <Shield className="h-3 w-3 text-emerald-500" />
+                    Clipboard
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                  <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleCopyCode}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copy Code
+                </DropdownMenuItem>
+                {canJoin && (
+                  <DropdownMenuItem onClick={handleJoinSession}>
+                    <Play className="h-4 w-4 mr-2" />
+                    Join Session
+                  </DropdownMenuItem>
+                )}
+                {canShare && (
+                  <DropdownMenuItem onClick={() => setShareDialogOpen(true)}>
+                    <Share className="h-4 w-4 mr-2" />
+                    Share Session
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                {canTerminate && (
+                  <DropdownMenuItem
+                    onClick={handleTerminate}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Terminate
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
-              {statusChip()}
-              {session.isPublic && (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <Eye className="h-3 w-3 text-emerald-500" />
-                  Public
-                </span>
-              )}
-              {session.allowClipboard && (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <Shield className="h-3 w-3 text-emerald-500" />
-                  Clipboard
-                </span>
-              )}
+              <span className="font-mono text-lg font-semibold text-foreground tracking-wide">
+                {session.code}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Clock className="h-4 w-4 text-emerald-500" />
+              <span>{formatDistanceToNow(session.createdAt, { addSuffix: true })}</span>
             </div>
           </div>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                <MoreVertical className="h-4 w-4 text-muted-foreground" />
+          {canJoin && (
+            <div className="flex gap-2">
+              <Button
+                className="flex-1 bg-emerald-600 hover:bg-emerald-600/90 text-white"
+                onClick={handleJoinSession}
+                disabled={isLoading}
+              >
+                <Play className="h-4 w-4 mr-2" />
+                Join
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleCopyCode}>
-                <Copy className="h-4 w-4 mr-2" />
-                Copy Code
-              </DropdownMenuItem>
-              {canJoin && (
-                <DropdownMenuItem onClick={handleJoinSession}>
-                  <Play className="h-4 w-4 mr-2" />
-                  Join Session
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              {canTerminate && (
-                <DropdownMenuItem
-                  onClick={handleTerminate}
-                  className="text-destructive focus:text-destructive"
+              {canShare && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-emerald-500/20 hover:bg-emerald-500/10"
+                  onClick={() => setShareDialogOpen(true)}
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Terminate
-                </DropdownMenuItem>
+                  <Share className="h-4 w-4" />
+                </Button>
               )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </CardHeader>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-emerald-500/20 hover:bg-emerald-500/10"
+                onClick={handleCopyCode}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      <CardContent className="space-y-4">
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-lg font-semibold text-foreground tracking-wide">
-              {session.code}
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Clock className="h-4 w-4 text-emerald-500" />
-            <span>{formatDistanceToNow(session.createdAt, { addSuffix: true })}</span>
-          </div>
-        </div>
-
-        {canJoin && (
-          <div className="flex gap-2">
-            <Button
-              className="flex-1 bg-emerald-600 hover:bg-emerald-600/90 text-white"
-              onClick={handleJoinSession}
-              disabled={isLoading}
-            >
-              <Play className="h-4 w-4 mr-2" />
-              Join
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-emerald-500/20 hover:bg-emerald-500/10"
-              onClick={handleCopyCode}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      <ShareSessionDialog
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        session={session}
+      />
+    </>
   );
 }

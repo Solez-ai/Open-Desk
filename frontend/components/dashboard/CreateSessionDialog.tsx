@@ -78,7 +78,7 @@ export default function CreateSessionDialog({
             Create New Session
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            Keep it simple. Subtle green accents guide you through.
+            Set up your remote session with the options below.
           </DialogDescription>
         </DialogHeader>
 

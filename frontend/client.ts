@@ -129,11 +129,15 @@ export namespace chat {
  * Import the endpoint handlers to derive the types for the client.
  */
 import { createSession as api_session_create_createSession } from "~backend/session/create";
+import { generateSessionLink as api_session_generate_link_generateSessionLink } from "~backend/session/generate_link";
 import { getSession as api_session_get_getSession } from "~backend/session/get";
 import { joinSession as api_session_join_joinSession } from "~backend/session/join";
+import { joinByToken as api_session_join_by_token_joinByToken } from "~backend/session/join_by_token";
 import { leaveSession as api_session_leave_leaveSession } from "~backend/session/leave";
 import { listMySessions as api_session_list_listMySessions } from "~backend/session/list";
 import { listParticipants as api_session_list_participants_listParticipants } from "~backend/session/list_participants";
+import { listSessionTokens as api_session_list_tokens_listSessionTokens } from "~backend/session/list_tokens";
+import { revokeSessionToken as api_session_revoke_token_revokeSessionToken } from "~backend/session/revoke_token";
 import { terminateSession as api_session_terminate_terminateSession } from "~backend/session/terminate";
 
 export namespace session {
@@ -144,11 +148,15 @@ export namespace session {
         constructor(baseClient: BaseClient) {
             this.baseClient = baseClient
             this.createSession = this.createSession.bind(this)
+            this.generateSessionLink = this.generateSessionLink.bind(this)
             this.getSession = this.getSession.bind(this)
+            this.joinByToken = this.joinByToken.bind(this)
             this.joinSession = this.joinSession.bind(this)
             this.leaveSession = this.leaveSession.bind(this)
             this.listMySessions = this.listMySessions.bind(this)
             this.listParticipants = this.listParticipants.bind(this)
+            this.listSessionTokens = this.listSessionTokens.bind(this)
+            this.revokeSessionToken = this.revokeSessionToken.bind(this)
             this.terminateSession = this.terminateSession.bind(this)
         }
 
@@ -162,12 +170,36 @@ export namespace session {
         }
 
         /**
+         * Generates a shareable link with a temporary token for session access.
+         */
+        public async generateSessionLink(params: RequestType<typeof api_session_generate_link_generateSessionLink>): Promise<ResponseType<typeof api_session_generate_link_generateSessionLink>> {
+            // Construct the body with only the fields which we want encoded within the body (excluding query string or header fields)
+            const body: Record<string, any> = {
+                baseUrl:        params.baseUrl,
+                expiresInHours: params.expiresInHours,
+            }
+
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI(`/sessions/${encodeURIComponent(params.sessionId)}/generate-link`, {method: "POST", body: JSON.stringify(body)})
+            return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_session_generate_link_generateSessionLink>
+        }
+
+        /**
          * Retrieves a single session by ID after enforcing access control.
          */
         public async getSession(params: { sessionId: string }): Promise<ResponseType<typeof api_session_get_getSession>> {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI(`/sessions/${encodeURIComponent(params.sessionId)}`, {method: "GET", body: undefined})
             return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_session_get_getSession>
+        }
+
+        /**
+         * Joins a session using a temporary token from a shareable link.
+         */
+        public async joinByToken(params: RequestType<typeof api_session_join_by_token_joinByToken>): Promise<ResponseType<typeof api_session_join_by_token_joinByToken>> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI(`/sessions/join-by-token`, {method: "POST", body: JSON.stringify(params)})
+            return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_session_join_by_token_joinByToken>
         }
 
         /**
@@ -205,6 +237,24 @@ export namespace session {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI(`/sessions/${encodeURIComponent(params.sessionId)}/participants`, {method: "GET", body: undefined})
             return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_session_list_participants_listParticipants>
+        }
+
+        /**
+         * Lists active tokens for a session that the user owns.
+         */
+        public async listSessionTokens(params: { sessionId: string }): Promise<ResponseType<typeof api_session_list_tokens_listSessionTokens>> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI(`/sessions/${encodeURIComponent(params.sessionId)}/tokens`, {method: "GET", body: undefined})
+            return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_session_list_tokens_listSessionTokens>
+        }
+
+        /**
+         * Revokes a session token to disable the associated shareable link.
+         */
+        public async revokeSessionToken(params: { sessionId: string, tokenId: string }): Promise<ResponseType<typeof api_session_revoke_token_revokeSessionToken>> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI(`/sessions/${encodeURIComponent(params.sessionId)}/tokens/${encodeURIComponent(params.tokenId)}`, {method: "DELETE", body: undefined})
+            return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_session_revoke_token_revokeSessionToken>
         }
 
         /**

@@ -83,7 +83,7 @@ export default function JoinSessionDialog({
         <DialogHeader>
           <DialogTitle className="tracking-tight">Join Session</DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            Enter a code to join. Green accents will confirm key steps.
+            Enter a session code to join an existing remote session.
           </DialogDescription>
         </DialogHeader>
 

@@ -65,7 +65,7 @@ export default function Dashboard() {
                   Welcome back
                 </h1>
                 <p className="text-muted-foreground">
-                  A calm space to manage remote sessions. Subtle green guides will highlight key actions.
+                  Manage your remote sessions and share secure access with others.
                 </p>
               </div>
               <div className="flex items-center gap-3">

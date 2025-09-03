@@ -3,6 +3,7 @@ import { useAuth } from "../contexts/AuthContext";
 import AuthPage from "./auth/AuthPage";
 import Dashboard from "./dashboard/Dashboard";
 import SessionRoom from "./session/SessionRoom";
+import JoinByLink from "./session/JoinByLink";
 import LoadingSpinner from "./ui/LoadingSpinner";
 import ConfigurationError from "./ui/ConfigurationError";
 
@@ -34,6 +35,10 @@ export default function AppRoutes() {
       <Route 
         path="/session/:sessionId" 
         element={isSignedIn ? <SessionRoom /> : <Navigate to="/auth" replace />} 
+      />
+      <Route 
+        path="/join/:token" 
+        element={isSignedIn ? <JoinByLink /> : <Navigate to="/auth" replace />} 
       />
       <Route 
         path="/" 
