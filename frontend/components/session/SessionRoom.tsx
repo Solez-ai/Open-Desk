@@ -38,6 +38,8 @@ export default function SessionRoom() {
     setParticipants,
     updateParticipant,
     removeParticipant,
+    setIsConnected,
+    setConnectionQuality,
   } = useSession();
 
   const [chatOpen, setChatOpen] = useState(false);
@@ -141,6 +143,30 @@ export default function SessionRoom() {
     [myRole]
   );
 
+  // Map connection state to a user-friendly quality label
+  const updateConnectionIndicators = useCallback((state: RTCPeerConnectionState) => {
+    switch (state) {
+      case "connected":
+        setIsConnected(true);
+        setConnectionQuality("excellent");
+        break;
+      case "connecting":
+        setIsConnected(false);
+        setConnectionQuality("good");
+        break;
+      case "disconnected":
+        setIsConnected(false);
+        setConnectionQuality("poor");
+        break;
+      case "failed":
+      case "closed":
+      default:
+        setIsConnected(false);
+        setConnectionQuality("offline");
+        break;
+    }
+  }, [setConnectionQuality, setIsConnected]);
+
   // Create or get a peer connection with a remote user
   const ensurePeerConnection = useCallback(
     (remoteUserId: string, asOfferer: boolean): PCRecord => {
@@ -159,6 +185,7 @@ export default function SessionRoom() {
 
       pc.onconnectionstatechange = () => {
         const state = pc.connectionState;
+        updateConnectionIndicators(state);
         if (state === "disconnected" || state === "failed" || state === "closed") {
           // Clean up on disconnect
           try {
@@ -216,7 +243,7 @@ export default function SessionRoom() {
 
       return record;
     },
-    [handleDataMessage, localStream, publishSignal]
+    [handleDataMessage, localStream, publishSignal, updateConnectionIndicators]
   );
 
   const createAndSendOfferTo = useCallback(

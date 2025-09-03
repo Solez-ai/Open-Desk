@@ -195,6 +195,8 @@ export namespace session {
 
         /**
          * Joins a session using a temporary token from a shareable link.
+         * Session status is only set to "active" when both a host and a controller are joined.
+         * Otherwise, it is set to "pending".
          */
         public async joinByToken(params: RequestType<typeof api_session_join_by_token_joinByToken>): Promise<ResponseType<typeof api_session_join_by_token_joinByToken>> {
             // Now make the actual call to the API
@@ -205,6 +207,8 @@ export namespace session {
         /**
          * Joins a session as host or controller after validating access rules.
          * Joining with a valid session code now authorizes controllers to join private sessions.
+         * Session status is only set to "active" when both a host and a controller are joined.
+         * Otherwise, it remains or is set to "pending".
          */
         public async joinSession(params: RequestType<typeof api_session_join_joinSession>): Promise<ResponseType<typeof api_session_join_joinSession>> {
             // Now make the actual call to the API
@@ -214,6 +218,8 @@ export namespace session {
 
         /**
          * Leaves a session; updates participant status and connection timestamps.
+         * Recomputes the session status: "active" only if both host and controller are joined,
+         * otherwise "pending" (unless session is already "ended").
          */
         public async leaveSession(params: { sessionId: string }): Promise<ResponseType<typeof api_session_leave_leaveSession>> {
             // Now make the actual call to the API

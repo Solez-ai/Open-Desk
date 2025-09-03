@@ -9,6 +9,8 @@ import type {
 } from "./types";
 
 // Joins a session using a temporary token from a shareable link.
+// Session status is only set to "active" when both a host and a controller are joined.
+// Otherwise, it is set to "pending".
 export const joinByToken = api<JoinByTokenRequest, JoinByTokenResponse>(
   { expose: true, method: "POST", path: "/sessions/join-by-token", auth: true },
   async (req) => {
@@ -84,11 +86,14 @@ export const joinByToken = api<JoinByTokenRequest, JoinByTokenResponse>(
           .maybeSingle(),
       ]);
 
-      const shouldBeActive = req.role === "host" || (!!hostJoined && !!controllerJoined);
+      const shouldBeActive = !!hostJoined && !!controllerJoined;
 
       if (shouldBeActive && session.status !== "active") {
         await supabaseAdmin.from("sessions").update({ status: "active" }).eq("id", session.id);
         session.status = "active";
+      } else if (!shouldBeActive && session.status !== "pending") {
+        await supabaseAdmin.from("sessions").update({ status: "pending" }).eq("id", session.id);
+        session.status = "pending";
       }
     }
 

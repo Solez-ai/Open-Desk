@@ -23,6 +23,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import type { Session } from "~backend/session/types";
+import { useSession } from "../../contexts/SessionContext";
 
 interface SessionToolbarProps {
   session: Session;
@@ -48,6 +49,8 @@ export default function SessionToolbar({
   onToggleControl,
 }: SessionToolbarProps) {
   const navigate = useNavigate();
+  const { participants } = useSession();
+  const joinedCount = participants.filter((p) => p.status === "joined").length;
 
   return (
     <TooltipProvider>
@@ -64,7 +67,7 @@ export default function SessionToolbar({
               <ArrowLeft className="h-4 w-4 mr-2" />
               Dashboard
             </Button>
-            
+
             <div className="flex items-center space-x-3">
               <img src="/logo.png" alt="OpenDesk Logo" className="h-5 w-5" />
               <div>
@@ -75,10 +78,10 @@ export default function SessionToolbar({
                   <Badge variant="outline" className="text-xs">
                     {session.code}
                   </Badge>
-                  <Badge 
+                  <Badge
                     className={
-                      session.status === "active" 
-                        ? "bg-green-100 text-green-800 border-green-200" 
+                      session.status === "active"
+                        ? "bg-green-100 text-green-800 border-green-200"
                         : "bg-yellow-100 text-yellow-800 border-yellow-200"
                     }
                   >
@@ -135,11 +138,7 @@ export default function SessionToolbar({
           <div className="flex items-center space-x-2">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onToggleChat}
-                >
+                <Button variant="outline" size="sm" onClick={onToggleChat}>
                   <MessageCircle className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
@@ -150,13 +149,14 @@ export default function SessionToolbar({
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onToggleParticipants}
-                >
-                  <Users className="h-4 w-4" />
-                </Button>
+                <div className="relative">
+                  <Button variant="outline" size="sm" onClick={onToggleParticipants}>
+                    <Users className="h-4 w-4" />
+                  </Button>
+                  <span className="absolute -top-1 -right-1 inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-emerald-600 text-white text-[10px]">
+                    {joinedCount}
+                  </span>
+                </div>
               </TooltipTrigger>
               <TooltipContent>
                 <p>Show participants</p>
@@ -165,16 +165,8 @@ export default function SessionToolbar({
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onToggleFullScreen}
-                >
-                  {isFullScreen ? (
-                    <Minimize className="h-4 w-4" />
-                  ) : (
-                    <Maximize className="h-4 w-4" />
-                  )}
+                <Button variant="outline" size="sm" onClick={onToggleFullScreen}>
+                  {isFullScreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -182,11 +174,7 @@ export default function SessionToolbar({
               </TooltipContent>
             </Tooltip>
 
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={onLeave}
-            >
+            <Button variant="destructive" size="sm" onClick={onLeave}>
               <PhoneOff className="h-4 w-4 mr-2" />
               Leave
             </Button>

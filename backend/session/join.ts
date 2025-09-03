@@ -10,6 +10,8 @@ import type {
 
 // Joins a session as host or controller after validating access rules.
 // Joining with a valid session code now authorizes controllers to join private sessions.
+// Session status is only set to "active" when both a host and a controller are joined.
+// Otherwise, it remains or is set to "pending".
 export const joinSession = api<JoinSessionRequest, JoinSessionResponse>(
   { expose: true, method: "POST", path: "/sessions/join", auth: true },
   async (req) => {
@@ -18,12 +20,15 @@ export const joinSession = api<JoinSessionRequest, JoinSessionResponse>(
       throw APIError.invalidArgument("must provide sessionId or code");
     }
 
+    // Normalize code to uppercase to avoid case sensitivity issues.
+    const normalizedCode = req.code?.toUpperCase();
+
     // Find session by id or code.
     const query = supabaseAdmin.from("sessions").select("*").limit(1);
 
     const { data: rows, error: fErr } = req.sessionId
       ? await query.eq("id", req.sessionId)
-      : await query.eq("code", req.code!);
+      : await query.eq("code", normalizedCode!);
 
     if (fErr || !rows || rows.length === 0) {
       throw APIError.notFound("session not found", fErr ?? undefined);
@@ -48,7 +53,7 @@ export const joinSession = api<JoinSessionRequest, JoinSessionResponse>(
       const isTarget = !!s.target_user_id && s.target_user_id === auth.userID;
 
       // Joining by code is now allowed for controllers.
-      const allowByCode = !!req.code;
+      const allowByCode = !!normalizedCode;
 
       let hasToken = false;
       if (req.token) {
@@ -94,8 +99,7 @@ export const joinSession = api<JoinSessionRequest, JoinSessionResponse>(
     }
 
     // Update session status:
-    // - If a host joins and session is not ended, mark active.
-    // - If a controller joins and there is already a host joined, mark active.
+    // Only mark as active if both a host and a controller are currently joined.
     if (s.status !== "ended") {
       const [{ data: hostJoined }, { data: controllerJoined }] = await Promise.all([
         supabaseAdmin
@@ -114,13 +118,14 @@ export const joinSession = api<JoinSessionRequest, JoinSessionResponse>(
           .maybeSingle(),
       ]);
 
-      const shouldBeActive =
-        (req.role === "host") ||
-        (!!hostJoined && !!controllerJoined);
+      const shouldBeActive = !!hostJoined && !!controllerJoined;
 
       if (shouldBeActive && s.status !== "active") {
         await supabaseAdmin.from("sessions").update({ status: "active" }).eq("id", s.id);
         s.status = "active";
+      } else if (!shouldBeActive && s.status !== "pending") {
+        await supabaseAdmin.from("sessions").update({ status: "pending" }).eq("id", s.id);
+        s.status = "pending";
       }
     }
 
