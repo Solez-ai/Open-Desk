@@ -9,6 +9,7 @@ import {
   Copy,
   Upload,
   Download,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +23,8 @@ import { useNavigate } from "react-router-dom";
 import type { Session } from "~backend/session/types";
 import { useRef } from "react";
 import { useSession } from "../../contexts/SessionContext";
+import { AdaptiveBitrateController } from "../../webrtc/AdaptiveBitrate";
+import QualityControl from "./QualityControl";
 
 interface SessionToolbarProps {
   session: Session;
@@ -36,6 +39,7 @@ interface SessionToolbarProps {
   onUploadFile: (file: File) => void;
   receivedCount: number;
   onToggleTransfers: () => void;
+  bitrateController?: AdaptiveBitrateController;
 }
 
 export default function SessionToolbar({
@@ -51,6 +55,7 @@ export default function SessionToolbar({
   onUploadFile,
   receivedCount,
   onToggleTransfers,
+  bitrateController,
 }: SessionToolbarProps) {
   const navigate = useNavigate();
   const { participants } = useSession();
@@ -173,6 +178,11 @@ export default function SessionToolbar({
                 <p>Show received files</p>
               </TooltipContent>
             </Tooltip>
+
+            {/* Quality Control */}
+            {bitrateController && (
+              <QualityControl bitrateController={bitrateController} />
+            )}
           </div>
 
           {/* Right Section */}

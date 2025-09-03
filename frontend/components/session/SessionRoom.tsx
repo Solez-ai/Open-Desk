@@ -11,18 +11,24 @@ import { useAuth } from "../../contexts/AuthContext";
 import RemoteDisplay from "./RemoteDisplay";
 import ChatPanel from "./ChatPanel";
 import ParticipantsList from "./ParticipantsList";
-import ConnectionStatus from "./ConnectionStatus";
 import SessionToolbar from "./SessionToolbar";
 import LoadingSpinner from "../ui/LoadingSpinner";
 import TransfersPanel, { type ReceivedFile } from "./TransfersPanel";
+import QualityMonitor from "./QualityMonitor";
+import QualityControl from "./QualityControl";
 import type { ControlMessage, SignalPayload, FileMetaMessage, FileChunkMessage, FileCompleteMessage } from "../../webrtc/types";
 import type { Session as SessionData, Participant } from "~backend/session/types";
 import { ICE_SERVERS } from "../../config";
+import { ICEOptimizer } from "../../webrtc/ICEOptimizer";
+import { AdaptiveBitrateController } from "../../webrtc/AdaptiveBitrate";
+import { ConnectionMonitor } from "../../webrtc/ConnectionMonitor";
 
 type PCRecord = {
   pc: RTCPeerConnection;
   dc: RTCDataChannel | null;
   remoteStream: MediaStream | null;
+  bitrateController?: AdaptiveBitrateController;
+  connectionMonitor?: ConnectionMonitor;
 };
 
 type SupabaseParticipantRow = {
@@ -67,6 +73,10 @@ export default function SessionRoom() {
 
   // For controller we display a single remote stream (from host).
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
+  // Quality monitoring
+  const [primaryBitrateController, setPrimaryBitrateController] = useState<AdaptiveBitrateController | null>(null);
+  const [primaryConnectionMonitor, setPrimaryConnectionMonitor] = useState<ConnectionMonitor | null>(null);
 
   // Manage multiple peer connections: key by remoteUserId.
   const connectionsRef = useRef<Map<string, PCRecord>>(new Map());
@@ -263,34 +273,65 @@ export default function SessionRoom() {
 
   // Create or get a peer connection with a remote user
   const ensurePeerConnection = useCallback(
-    (remoteUserId: string, asOfferer: boolean): PCRecord => {
+    async (remoteUserId: string, asOfferer: boolean): Promise<PCRecord> => {
       let existing = connectionsRef.current.get(remoteUserId);
       if (existing) return existing;
 
-      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      // Get optimized ICE configuration
+      const iceConfig = await ICEOptimizer.getOptimizedConfig();
+      
+      const pc = ICEOptimizer.createOptimizedPeerConnection(
+        iceConfig,
+        async (candidate) => {
+          if (candidate) {
+            await publishSignal("ice", candidate.toJSON(), remoteUserId);
+          }
+        },
+        (state) => {
+          updateConnectionIndicators(state);
+          if (state === "disconnected" || state === "failed" || state === "closed") {
+            // Clean up on disconnect
+            const record = connectionsRef.current.get(remoteUserId);
+            if (record) {
+              try {
+                record.dc?.close();
+              } catch {}
+              try {
+                record.bitrateController?.destroy();
+              } catch {}
+              try {
+                record.connectionMonitor?.destroy();
+              } catch {}
+              try {
+                pc.close();
+              } catch {}
+              connectionsRef.current.delete(remoteUserId);
+            }
+          }
+        }
+      );
+
+      // Enable aggressive ICE for faster connection
+      ICEOptimizer.enableAggressiveICE(pc);
+
       const record: PCRecord = { pc, dc: null, remoteStream: null };
       connectionsRef.current.set(remoteUserId, record);
 
-      pc.onicecandidate = async (event) => {
-        if (event.candidate) {
-          await publishSignal("ice", event.candidate.toJSON(), remoteUserId);
-        }
-      };
+      // Set up adaptive bitrate controller
+      const bitrateController = new AdaptiveBitrateController(pc);
+      const connectionMonitor = bitrateController.getConnectionMonitor();
+      
+      record.bitrateController = bitrateController;
+      record.connectionMonitor = connectionMonitor;
 
-      pc.onconnectionstatechange = () => {
-        const state = pc.connectionState;
-        updateConnectionIndicators(state);
-        if (state === "disconnected" || state === "failed" || state === "closed") {
-          // Clean up on disconnect
-          try {
-            record.dc?.close();
-          } catch {}
-          try {
-            pc.close();
-          } catch {}
-          connectionsRef.current.delete(remoteUserId);
-        }
-      };
+      // Start monitoring if this is the primary connection
+      if (myRole === "controller" && hostParticipant?.userId === remoteUserId) {
+        setPrimaryBitrateController(bitrateController);
+        setPrimaryConnectionMonitor(connectionMonitor);
+        bitrateController.start();
+      } else if (myRole === "host") {
+        bitrateController.start();
+      }
 
       pc.ontrack = (event) => {
         // For controllers, set the host's stream.
@@ -337,12 +378,12 @@ export default function SessionRoom() {
 
       return record;
     },
-    [handleDataMessage, localStream, publishSignal, updateConnectionIndicators]
+    [handleDataMessage, localStream, publishSignal, updateConnectionIndicators, myRole, hostParticipant]
   );
 
   const createAndSendOfferTo = useCallback(
     async (remoteUserId: string) => {
-      const rec = ensurePeerConnection(remoteUserId, true);
+      const rec = await ensurePeerConnection(remoteUserId, true);
       try {
         const offer = await rec.pc.createOffer();
         await rec.pc.setLocalDescription(offer);
@@ -371,7 +412,7 @@ export default function SessionRoom() {
         return;
       }
 
-      const rec = ensurePeerConnection(senderUserId, false);
+      const rec = await ensurePeerConnection(senderUserId, false);
       try {
         await rec.pc.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await rec.pc.createAnswer();
@@ -416,7 +457,11 @@ export default function SessionRoom() {
     setIsStartingShare(true);
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 30, max: 60 } },
+        video: { 
+          frameRate: { ideal: 30, max: 60 },
+          width: { ideal: 1920, max: 1920 },
+          height: { ideal: 1080, max: 1080 },
+        },
         audio: true,
       });
       setLocalStream(stream);
@@ -426,6 +471,11 @@ export default function SessionRoom() {
         stream.getTracks().forEach((track) => {
           rec.pc.addTrack(track, stream);
         });
+        
+        // Start bitrate controller for each connection when stream is available
+        if (rec.bitrateController) {
+          rec.bitrateController.start();
+        }
       });
 
       toast({
@@ -463,6 +513,12 @@ export default function SessionRoom() {
       s.getTracks().forEach((t) => t.stop());
     }
     setLocalStream(null);
+    
+    // Stop all bitrate controllers
+    connectionsRef.current.forEach((rec) => {
+      rec.bitrateController?.stop();
+    });
+    
     toast({ title: "Screen sharing stopped" });
   }, [localStream, toast]);
 
@@ -583,6 +639,12 @@ export default function SessionRoom() {
             rec.dc?.close();
           } catch {}
           try {
+            rec.bitrateController?.destroy();
+          } catch {}
+          try {
+            rec.connectionMonitor?.destroy();
+          } catch {}
+          try {
             rec.pc.close();
           } catch {}
           connectionsRef.current.delete(participant.userId);
@@ -665,11 +727,19 @@ export default function SessionRoom() {
           rec.dc?.close();
         } catch {}
         try {
+          rec.bitrateController?.destroy();
+        } catch {}
+        try {
+          rec.connectionMonitor?.destroy();
+        } catch {}
+        try {
           rec.pc.close();
         } catch {}
       });
       connectionsRef.current.clear();
       stopScreenShare();
+      setPrimaryBitrateController(null);
+      setPrimaryConnectionMonitor(null);
       navigate("/dashboard");
     }
   };
@@ -685,11 +755,19 @@ export default function SessionRoom() {
           rec.dc?.close();
         } catch {}
         try {
+          rec.bitrateController?.destroy();
+        } catch {}
+        try {
+          rec.connectionMonitor?.destroy();
+        } catch {}
+        try {
           rec.pc.close();
         } catch {}
       });
       connectionsRef.current.clear();
       stopScreenShare();
+      setPrimaryBitrateController(null);
+      setPrimaryConnectionMonitor(null);
       navigate("/dashboard");
     }
   };
@@ -782,7 +860,14 @@ export default function SessionRoom() {
 
   return (
     <div className="min-h-screen bg-black text-white relative">
-      <ConnectionStatus />
+      {/* Quality Monitor in top-right corner */}
+      <div className="fixed top-20 right-4 z-40 flex items-center space-x-2">
+        <QualityMonitor
+          connectionMonitor={primaryConnectionMonitor || undefined}
+          bitrateController={primaryBitrateController || undefined}
+        />
+      </div>
+      
       <SessionToolbar
         session={currentSession}
         onLeave={handleLeaveSession}
@@ -796,6 +881,7 @@ export default function SessionRoom() {
         onUploadFile={sendFile}
         receivedCount={receivedFiles.length}
         onToggleTransfers={() => setTransfersOpen(!transfersOpen)}
+        bitrateController={primaryBitrateController || undefined}
       />
       <div className="flex h-screen pt-16">
         <div className="flex-1 relative">
