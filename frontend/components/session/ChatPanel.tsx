@@ -6,6 +6,7 @@ import { X, Send } from "lucide-react";
 import { useBackend } from "../../hooks/useBackend";
 import { useToast } from "@/components/ui/use-toast";
 import { formatDistanceToNow } from "date-fns";
+import { useAuth } from "../../contexts/AuthContext";
 
 interface ChatPanelProps {
   sessionId: string;
@@ -26,6 +27,7 @@ export default function ChatPanel({ sessionId, onClose }: ChatPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const backend = useBackend();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -53,7 +55,7 @@ export default function ChatPanel({ sessionId, onClose }: ChatPanelProps) {
       // Add message to local state (optimistic update)
       setMessages(prev => [...prev, {
         id: result.id.toString(),
-        senderUserId: "current-user", // This would come from auth context
+        senderUserId: user?.id ?? "me",
         message: messageText,
         createdAt: result.createdAt,
       }]);
@@ -99,7 +101,7 @@ export default function ChatPanel({ sessionId, onClose }: ChatPanelProps) {
               <div key={msg.id} className="space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-blue-400">
-                    You
+                    {msg.senderUserId === (user?.id ?? "") ? "You" : msg.senderUserId.slice(0, 6)}
                   </span>
                   <span className="text-xs text-gray-500">
                     {formatDistanceToNow(msg.createdAt, { addSuffix: true })}

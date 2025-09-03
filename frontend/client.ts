@@ -129,9 +129,11 @@ export namespace chat {
  * Import the endpoint handlers to derive the types for the client.
  */
 import { createSession as api_session_create_createSession } from "~backend/session/create";
+import { getSession as api_session_get_getSession } from "~backend/session/get";
 import { joinSession as api_session_join_joinSession } from "~backend/session/join";
 import { leaveSession as api_session_leave_leaveSession } from "~backend/session/leave";
 import { listMySessions as api_session_list_listMySessions } from "~backend/session/list";
+import { listParticipants as api_session_list_participants_listParticipants } from "~backend/session/list_participants";
 import { terminateSession as api_session_terminate_terminateSession } from "~backend/session/terminate";
 
 export namespace session {
@@ -142,9 +144,11 @@ export namespace session {
         constructor(baseClient: BaseClient) {
             this.baseClient = baseClient
             this.createSession = this.createSession.bind(this)
+            this.getSession = this.getSession.bind(this)
             this.joinSession = this.joinSession.bind(this)
             this.leaveSession = this.leaveSession.bind(this)
             this.listMySessions = this.listMySessions.bind(this)
+            this.listParticipants = this.listParticipants.bind(this)
             this.terminateSession = this.terminateSession.bind(this)
         }
 
@@ -158,7 +162,17 @@ export namespace session {
         }
 
         /**
+         * Retrieves a single session by ID after enforcing access control.
+         */
+        public async getSession(params: { sessionId: string }): Promise<ResponseType<typeof api_session_get_getSession>> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI(`/sessions/${encodeURIComponent(params.sessionId)}`, {method: "GET", body: undefined})
+            return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_session_get_getSession>
+        }
+
+        /**
          * Joins a session as host or controller after validating access rules.
+         * Joining with a valid session code now authorizes controllers to join private sessions.
          */
         public async joinSession(params: RequestType<typeof api_session_join_joinSession>): Promise<ResponseType<typeof api_session_join_joinSession>> {
             // Now make the actual call to the API
@@ -182,6 +196,15 @@ export namespace session {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI(`/sessions`, {method: "GET", body: undefined})
             return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_session_list_listMySessions>
+        }
+
+        /**
+         * Lists all participants for a session with access control checks.
+         */
+        public async listParticipants(params: { sessionId: string }): Promise<ResponseType<typeof api_session_list_participants_listParticipants>> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI(`/sessions/${encodeURIComponent(params.sessionId)}/participants`, {method: "GET", body: undefined})
+            return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_session_list_participants_listParticipants>
         }
 
         /**

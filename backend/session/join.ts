@@ -9,6 +9,7 @@ import type {
 } from "./types";
 
 // Joins a session as host or controller after validating access rules.
+// Joining with a valid session code now authorizes controllers to join private sessions.
 export const joinSession = api<JoinSessionRequest, JoinSessionResponse>(
   { expose: true, method: "POST", path: "/sessions/join", auth: true },
   async (req) => {
@@ -29,25 +30,25 @@ export const joinSession = api<JoinSessionRequest, JoinSessionResponse>(
     }
     const s = rows[0];
 
-    // Access control:
-    // - Host: must be the target user (if specified) or owner (self-host)
+    if (s.status === "ended") {
+      throw APIError.invalidArgument("session has already ended");
+    }
+
+    // Access control
     if (req.role === "host") {
+      // Host must be the target if specified, otherwise allow owner or public sessions.
       if (s.target_user_id && s.target_user_id !== auth.userID) {
         throw APIError.permissionDenied("not authorized as host for this session");
       }
-      // If no explicit target, allow owner to be host on their own machine as fallback.
-      if (!s.target_user_id && s.owner_id !== auth.userID) {
-        // Allow join if public session
-        if (!s.is_public) {
-          throw APIError.permissionDenied("host join denied");
-        }
+      if (!s.target_user_id && s.owner_id !== auth.userID && !s.is_public) {
+        throw APIError.permissionDenied("host join denied");
       }
-    }
-
-    // - Controller: allowed if owner or invited target, or session is public, or has a valid token.
-    if (req.role === "controller") {
+    } else if (req.role === "controller") {
       const isOwner = s.owner_id === auth.userID;
       const isTarget = !!s.target_user_id && s.target_user_id === auth.userID;
+
+      // Joining by code is now allowed for controllers.
+      const allowByCode = !!req.code;
 
       let hasToken = false;
       if (req.token) {
@@ -66,7 +67,7 @@ export const joinSession = api<JoinSessionRequest, JoinSessionResponse>(
         hasToken = !!tokenRow;
       }
 
-      if (!isOwner && !isTarget && !s.is_public && !hasToken) {
+      if (!isOwner && !isTarget && !s.is_public && !hasToken && !allowByCode) {
         throw APIError.permissionDenied("controller join denied");
       }
     }
@@ -92,9 +93,35 @@ export const joinSession = api<JoinSessionRequest, JoinSessionResponse>(
       throw APIError.internal("failed to join session", jErr ?? undefined);
     }
 
-    // If host joined, update session to active from pending, if not ended.
-    if (req.role === "host" && s.status !== "ended" && s.status !== "active") {
-      await supabaseAdmin.from("sessions").update({ status: "active" }).eq("id", s.id);
+    // Update session status:
+    // - If a host joins and session is not ended, mark active.
+    // - If a controller joins and there is already a host joined, mark active.
+    if (s.status !== "ended") {
+      const [{ data: hostJoined }, { data: controllerJoined }] = await Promise.all([
+        supabaseAdmin
+          .from("session_participants")
+          .select("id")
+          .eq("session_id", s.id)
+          .eq("role", "host")
+          .eq("status", "joined")
+          .maybeSingle(),
+        supabaseAdmin
+          .from("session_participants")
+          .select("id")
+          .eq("session_id", s.id)
+          .eq("role", "controller")
+          .eq("status", "joined")
+          .maybeSingle(),
+      ]);
+
+      const shouldBeActive =
+        (req.role === "host") ||
+        (!!hostJoined && !!controllerJoined);
+
+      if (shouldBeActive && s.status !== "active") {
+        await supabaseAdmin.from("sessions").update({ status: "active" }).eq("id", s.id);
+        s.status = "active";
+      }
     }
 
     const session: Session = {
@@ -103,7 +130,7 @@ export const joinSession = api<JoinSessionRequest, JoinSessionResponse>(
       name: s.name,
       ownerId: s.owner_id,
       targetUserId: s.target_user_id,
-      status: s.status === "pending" && req.role === "host" ? "active" : s.status,
+      status: s.status,
       allowClipboard: s.allow_clipboard,
       isPublic: s.is_public,
       createdAt: new Date(s.created_at),

@@ -68,3 +68,19 @@ export interface TerminateSessionResponse {
 export interface ListMySessionsResponse {
   sessions: Session[];
 }
+
+export interface GetSessionRequest {
+  sessionId: string;
+}
+
+export interface GetSessionResponse {
+  session: Session;
+}
+
+export interface ListParticipantsRequest {
+  sessionId: string;
+}
+
+export interface ListParticipantsResponse {
+  participants: Participant[];
+}
