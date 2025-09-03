@@ -198,6 +198,7 @@ export default function ChatPanel({ sessionId, onClose }: ChatPanelProps) {
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Type a message..."
+            disabled={isLoading}
             className="flex-1 bg-gray-800 border-gray-600 text-white placeholder:text-gray-400 focus:border-blue-500"
             maxLength={500}
           />

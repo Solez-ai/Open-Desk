@@ -38,8 +38,11 @@ export const joinByToken = api<JoinByTokenRequest, JoinByTokenResponse>(
       .eq("id", tokenRow.session_id)
       .maybeSingle();
 
-    if (sessionError || !session) {
-      throw APIError.notFound("session not found", sessionError ?? undefined);
+    if (sessionError) {
+      throw APIError.internal("failed to load session", sessionError);
+    }
+    if (!session) {
+      throw APIError.notFound("session not found for this token");
     }
 
     if (session.status === "ended") {
