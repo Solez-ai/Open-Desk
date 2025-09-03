@@ -1,5 +1,3 @@
-import { EventEmitter } from "events";
-
 export interface NetworkStats {
   bytesReceived: number;
   bytesSent: number;
@@ -18,7 +16,13 @@ export interface QualityMetrics {
   issues: string[];
 }
 
-export class ConnectionMonitor extends EventEmitter {
+type EventMap = {
+  stats: NetworkStats;
+  quality: QualityMetrics;
+  qualityChange: QualityMetrics;
+};
+
+export class ConnectionMonitor {
   private pc: RTCPeerConnection;
   private statsInterval: number | null = null;
   private previousStats: NetworkStats | null = null;
@@ -26,9 +30,40 @@ export class ConnectionMonitor extends EventEmitter {
   private readonly QUALITY_HISTORY_SIZE = 10;
   private qualityHistory: QualityMetrics[] = [];
 
+  private listeners: {
+    stats: Set<(payload: NetworkStats) => void>;
+    quality: Set<(payload: QualityMetrics) => void>;
+    qualityChange: Set<(payload: QualityMetrics) => void>;
+  } = {
+    stats: new Set(),
+    quality: new Set(),
+    qualityChange: new Set(),
+  };
+
   constructor(peerConnection: RTCPeerConnection) {
-    super();
     this.pc = peerConnection;
+  }
+
+  on<K extends keyof EventMap>(event: K, listener: (payload: EventMap[K]) => void): void {
+    this.listeners[event].add(listener as any);
+  }
+
+  off<K extends keyof EventMap>(event: K, listener: (payload: EventMap[K]) => void): void {
+    this.listeners[event].delete(listener as any);
+  }
+
+  private emit<K extends keyof EventMap>(event: K, payload: EventMap[K]): void {
+    for (const l of this.listeners[event]) {
+      try {
+        (l as (p: EventMap[K]) => void)(payload);
+      } catch (err) {
+        console.error(`Listener for ${String(event)} threw`, err);
+      }
+    }
+  }
+
+  removeAllListeners(): void {
+    (Object.keys(this.listeners) as (keyof EventMap)[]).forEach((k) => this.listeners[k].clear());
   }
 
   start(): void {
@@ -40,10 +75,10 @@ export class ConnectionMonitor extends EventEmitter {
         if (stats) {
           const quality = this.calculateQuality(stats);
           this.updateQualityHistory(quality);
-          
+
           this.emit("stats", stats);
           this.emit("quality", quality);
-          
+
           // Emit quality change events
           if (this.hasQualityChanged()) {
             this.emit("qualityChange", quality);
@@ -70,9 +105,9 @@ export class ConnectionMonitor extends EventEmitter {
       let candidatePair: RTCIceCandidatePairStats | null = null;
 
       statsReport.forEach((report) => {
-        if (report.type === "inbound-rtp" && report.mediaType === "video") {
+        if (report.type === "inbound-rtp" && (report as any).mediaType === "video") {
           inboundRtp = report as RTCInboundRtpStreamStats;
-        } else if (report.type === "outbound-rtp" && report.mediaType === "video") {
+        } else if (report.type === "outbound-rtp" && (report as any).mediaType === "video") {
           outboundRtp = report as RTCOutboundRtpStreamStats;
         } else if (report.type === "candidate-pair" && (report as RTCIceCandidatePairStats).state === "succeeded") {
           candidatePair = report as RTCIceCandidatePairStats;
@@ -104,11 +139,11 @@ export class ConnectionMonitor extends EventEmitter {
 
   private calculatePacketLossRate(inbound: RTCInboundRtpStreamStats | null): number {
     if (!inbound) return 0;
-    
+
     const packetsReceived = inbound.packetsReceived || 0;
     const packetsLost = inbound.packetsLost || 0;
     const totalPackets = packetsReceived + packetsLost;
-    
+
     return totalPackets > 0 ? (packetsLost / totalPackets) * 100 : 0;
   }
 
@@ -145,28 +180,29 @@ export class ConnectionMonitor extends EventEmitter {
     }
 
     // RTT impact (0-30 points)
-    if (stats.roundTripTime > 300) {
+    if (stats.roundTripTime > 0.3) {
       score -= 30;
       issues.push("High latency");
-    } else if (stats.roundTripTime > 150) {
+    } else if (stats.roundTripTime > 0.15) {
       score -= 15;
       issues.push("Moderate latency");
-    } else if (stats.roundTripTime > 100) {
+    } else if (stats.roundTripTime > 0.1) {
       score -= 5;
       issues.push("Minor latency");
     }
 
     // Jitter impact (0-20 points)
-    if (stats.jitter > 50) {
+    if (stats.jitter > 0.05) {
       score -= 20;
       issues.push("High jitter");
-    } else if (stats.jitter > 30) {
+    } else if (stats.jitter > 0.03) {
       score -= 10;
       issues.push("Moderate jitter");
     }
 
     // Bandwidth impact (0-10 points)
-    if (stats.bandwidth < 500000) { // Less than 500 kbps
+    if (stats.bandwidth < 500000) {
+      // Less than 500 kbps
       score -= 10;
       issues.push("Low bandwidth");
     }
@@ -191,18 +227,19 @@ export class ConnectionMonitor extends EventEmitter {
 
   private hasQualityChanged(): boolean {
     if (this.qualityHistory.length < 2) return false;
-    
+
     const current = this.qualityHistory[this.qualityHistory.length - 1];
     const previous = this.qualityHistory[this.qualityHistory.length - 2];
-    
+
     return current.category !== previous.category;
   }
 
   getAverageQuality(): QualityMetrics | null {
     if (this.qualityHistory.length === 0) return null;
 
-    const avgScore = this.qualityHistory.reduce((sum, q) => sum + q.score, 0) / this.qualityHistory.length;
-    const allIssues = [...new Set(this.qualityHistory.flatMap(q => q.issues))];
+    const avgScore =
+      this.qualityHistory.reduce((sum, q) => sum + q.score, 0) / this.qualityHistory.length;
+    const allIssues = [...new Set(this.qualityHistory.flatMap((q) => q.issues))];
 
     let category: QualityMetrics["category"];
     if (avgScore >= 85) category = "excellent";
