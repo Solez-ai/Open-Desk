@@ -1,5 +1,7 @@
 # OpenDesk - By Samin Yeasar
 
+# Leap.new Link --> https://leap.new/preview/proj_d2rukas82vjq7vdavprg
+
 OpenDesk is a secure, open-source remote desktop web application backend using Encore.ts and Supabase. It aims to be a free, lightweight alternative to TeamViewer — built with simplicity, security, and local-first data handling in mind.
 
 - Authentication: Supabase (JWT) via Encore global auth handler
@@ -7,8 +9,6 @@ OpenDesk is a secure, open-source remote desktop web application backend using E
 - Backend: Encore.ts (TypeScript), type-safe APIs
 - Data Minimization: Only metadata and signaling persist in Supabase; streaming and inputs are peer-to-peer via WebRTC
 - Cross-Platform: Intended for a React + TypeScript frontend
-
-Star on GitHub: https://github.com/your-org/opendesk — please consider giving a star!
 
 ## Architecture Summary
 
@@ -28,8 +28,5 @@ Star on GitHub: https://github.com/your-org/opendesk — please consider giving 
 - SupabaseServiceRoleKey
 - SupabaseJWTSecret
 
-Optionally, also set:
-- SupabaseAnonKey (not used server-side, but handy for documentation and tooling)
 
-See supabase/schema.sql for the complete Supabase schema (tables, indexes, RLS policies, publication).
 
