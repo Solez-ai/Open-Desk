@@ -22,6 +22,7 @@ import { ICE_SERVERS } from "../../config";
 import { ICEOptimizer } from "../../webrtc/ICEOptimizer";
 import { AdaptiveBitrateController } from "../../webrtc/AdaptiveBitrate";
 import { ConnectionMonitor } from "../../webrtc/ConnectionMonitor";
+import { BrowserEmulatedAdapter, ControlAdapter, LocalAgentAdapter } from "../../webrtc/ControlAdapters";
 
 type PCRecord = {
   pc: RTCPeerConnection;
@@ -91,6 +92,10 @@ export default function SessionRoom() {
     totalChunks?: number;
   }>>(new Map());
   const [receivedFiles, setReceivedFiles] = useState<ReceivedFile[]>([]);
+
+  // Control adapter (host-side)
+  const controlAdapterRef = useRef<ControlAdapter | null>(null);
+  const [controlAdapterLabel, setControlAdapterLabel] = useState<string | undefined>(undefined);
 
   const myParticipant = participants.find((p) => p.userId === user?.id);
   const myRole = myParticipant?.role;
@@ -166,6 +171,47 @@ export default function SessionRoom() {
     }
   }, [sessionDetail, setCurrentSession, setParticipants]);
 
+  // Setup control adapter when acting as host (attempt native first)
+  useEffect(() => {
+    let destroyed = false;
+    async function setupAdapter() {
+      if (myRole !== "host") return;
+      // Clean previous
+      controlAdapterRef.current?.destroy();
+      controlAdapterRef.current = null;
+
+      const native = new LocalAgentAdapter();
+      const ok = await native.init();
+      if (!ok) {
+        if (destroyed) return;
+        const fallback = new BrowserEmulatedAdapter();
+        await fallback.init();
+        controlAdapterRef.current = fallback;
+        setControlAdapterLabel(`${fallback.name}`);
+        toast({
+          title: "Native agent not found",
+          description: "Using browser emulation (limited control). Install/launch the host agent for full control.",
+        });
+      } else {
+        if (destroyed) return;
+        controlAdapterRef.current = native;
+        setControlAdapterLabel(`${native.name}`);
+        toast({
+          title: "Native agent connected",
+          description: "Full remote control enabled.",
+        });
+      }
+    }
+    setupAdapter();
+
+    return () => {
+      destroyed = true;
+      controlAdapterRef.current?.destroy();
+      controlAdapterRef.current = null;
+      setControlAdapterLabel(undefined);
+    };
+  }, [myRole, toast]);
+
   // Map connection state to a user-friendly quality label
   const updateConnectionIndicators = useCallback((state: RTCPeerConnectionState) => {
     switch (state) {
@@ -190,7 +236,7 @@ export default function SessionRoom() {
     }
   }, [setConnectionQuality, setIsConnected]);
 
-  // Handle incoming data messages (controller -> host and file transfers)
+  // Handle incoming data messages (controller -> host and file transfers, clipboard)
   const handleDataMessage = useCallback(
     async (message: ControlMessage) => {
       // File transfer handling
@@ -251,24 +297,58 @@ export default function SessionRoom() {
         return;
       }
 
+      // Clipboard sync both directions if allowed
+      if (message.type === "clipboard") {
+        const content = (message as any).content as string;
+        // Host accepts controller clipboard if allowed
+        if (currentSession?.allowClipboard) {
+          try {
+            // Try native agent first
+            if (myRole === "host" && controlAdapterRef.current) {
+              await controlAdapterRef.current.onClipboard(content);
+            }
+            // Also try browser clipboard as best-effort
+            await navigator.clipboard.writeText(content);
+            toast({
+              title: "Clipboard synced",
+              description: "Clipboard content received.",
+            });
+          } catch (err) {
+            console.error("Clipboard write failed:", err);
+          }
+        }
+        return;
+      }
+
       // Remote control events (host-side)
       if (myRole !== "host") return;
+      if (!isControlEnabled) return;
+
+      const adapter = controlAdapterRef.current;
+      if (!adapter) return;
 
       switch (message.type) {
         case "mousemove":
-          // Could visualize cursor for host if showing preview; currently not rendered.
+          adapter.onMouseMove(message.x, message.y);
           break;
         case "mousedown":
+          adapter.onMouseDown(message.x, message.y, message.button);
+          break;
         case "mouseup":
+          adapter.onMouseUp(message.x, message.y, message.button);
+          break;
         case "scroll":
+          adapter.onScroll(message.deltaX, message.deltaY);
+          break;
         case "keydown":
+          adapter.onKeyDown(message.key, message.code);
+          break;
         case "keyup":
-        case "clipboard":
-          // Stub for integration with a native host agent.
+          adapter.onKeyUp(message.key, message.code);
           break;
       }
     },
-    [myRole, toast]
+    [currentSession?.allowClipboard, isControlEnabled, myRole, toast]
   );
 
   // Create or get a peer connection with a remote user
@@ -538,10 +618,15 @@ export default function SessionRoom() {
       if (myRole === "controller" && hostParticipant) {
         sendDataTo(hostParticipant.userId, message);
       } else if (myRole === "host") {
-        // Host may decide to broadcast some control messages if needed.
+        // Host may broadcast certain messages like clipboard to controllers.
+        if (message.type === "clipboard") {
+          participants
+            .filter((p) => p.role === "controller" && p.status === "joined")
+            .forEach((p) => sendDataTo(p.userId, message));
+        }
       }
     },
-    [hostParticipant, isControlEnabled, myRole, sendDataTo]
+    [hostParticipant, isControlEnabled, myRole, participants, sendDataTo]
   );
 
   // File upload via data channel
@@ -614,6 +699,35 @@ export default function SessionRoom() {
     },
     [hostParticipant, myRole, participants, sendDataTo, toast, user]
   );
+
+  // Clipboard sync
+  const syncClipboard = useCallback(async () => {
+    if (!currentSession?.allowClipboard) {
+      toast({
+        variant: "destructive",
+        title: "Clipboard disabled",
+        description: "Clipboard sync is not enabled for this session.",
+      });
+      return;
+    }
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) {
+        toast({ title: "Clipboard empty", description: "Nothing to sync." });
+        return;
+      }
+      const msg: ControlMessage = { type: "clipboard", content: text } as any;
+      sendData(msg);
+      toast({ title: "Clipboard sent", description: "Clipboard content sent to peer(s)." });
+    } catch (err) {
+      console.error("Clipboard read failed:", err);
+      toast({
+        variant: "destructive",
+        title: "Clipboard error",
+        description: "Unable to access clipboard. Please allow permission.",
+      });
+    }
+  }, [currentSession?.allowClipboard, sendData, toast]);
 
   // Subscribe to realtime updates
   useEffect(() => {
@@ -737,9 +851,11 @@ export default function SessionRoom() {
         } catch {}
       });
       connectionsRef.current.clear();
-      stopScreenShare();
+      controlAdapterRef.current?.destroy();
+      controlAdapterRef.current = null;
       setPrimaryBitrateController(null);
       setPrimaryConnectionMonitor(null);
+      stopScreenShare();
       navigate("/dashboard");
     }
   };
@@ -765,9 +881,11 @@ export default function SessionRoom() {
         } catch {}
       });
       connectionsRef.current.clear();
-      stopScreenShare();
+      controlAdapterRef.current?.destroy();
+      controlAdapterRef.current = null;
       setPrimaryBitrateController(null);
       setPrimaryConnectionMonitor(null);
+      stopScreenShare();
       navigate("/dashboard");
     }
   };
@@ -847,6 +965,21 @@ export default function SessionRoom() {
       <p className="text-sm text-gray-300">
         Controllers will connect automatically when you start sharing.
       </p>
+
+      {/* Optional local preview */}
+      {localStream && (
+        <video
+          autoPlay
+          muted
+          playsInline
+          className="mt-2 max-w-[60%] max-h-[40vh] rounded border border-gray-700"
+          ref={(el) => {
+            if (el && localStream) {
+              el.srcObject = localStream;
+            }
+          }}
+        />
+      )}
     </div>
   );
 
@@ -857,6 +990,8 @@ export default function SessionRoom() {
       isControlEnabled={isControlEnabled}
     />
   );
+
+  const myRoleLabel = myRole ? (myRole === "host" ? "Host" : "Controller") : undefined;
 
   return (
     <div className="min-h-screen bg-black text-white relative">
@@ -882,6 +1017,9 @@ export default function SessionRoom() {
         receivedCount={receivedFiles.length}
         onToggleTransfers={() => setTransfersOpen(!transfersOpen)}
         bitrateController={primaryBitrateController || undefined}
+        onSyncClipboard={syncClipboard}
+        myRoleLabel={myRoleLabel}
+        controlAdapterLabel={myRole === "host" ? controlAdapterLabel : undefined}
       />
       <div className="flex h-screen pt-16">
         <div className="flex-1 relative">

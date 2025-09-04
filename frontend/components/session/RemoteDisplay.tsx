@@ -47,10 +47,22 @@ export default function RemoteDisplay({
     }
   };
 
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (!isControlEnabled) return;
+    e.preventDefault();
+    sendControlMessage({ type: "scroll", deltaX: e.deltaX, deltaY: e.deltaY });
+  };
+
   const handleKeyEvent = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!isControlEnabled) return;
     e.preventDefault();
     sendControlMessage({ type: e.type as "keydown" | "keyup", key: e.key, code: e.code });
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (isControlEnabled) {
+      e.preventDefault();
+    }
   };
 
   return (
@@ -60,8 +72,10 @@ export default function RemoteDisplay({
       onMouseMove={handleMouseEvent}
       onMouseDown={handleMouseEvent}
       onMouseUp={handleMouseEvent}
+      onWheel={handleWheel}
       onKeyDown={handleKeyEvent}
       onKeyUp={handleKeyEvent}
+      onContextMenu={handleContextMenu}
       tabIndex={0} // Make div focusable
     >
       <video

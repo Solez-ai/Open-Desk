@@ -40,6 +40,9 @@ interface SessionToolbarProps {
   receivedCount: number;
   onToggleTransfers: () => void;
   bitrateController?: AdaptiveBitrateController;
+  onSyncClipboard: () => void;
+  myRoleLabel?: string;
+  controlAdapterLabel?: string;
 }
 
 export default function SessionToolbar({
@@ -56,6 +59,9 @@ export default function SessionToolbar({
   receivedCount,
   onToggleTransfers,
   bitrateController,
+  onSyncClipboard,
+  myRoleLabel,
+  controlAdapterLabel,
 }: SessionToolbarProps) {
   const navigate = useNavigate();
   const { participants } = useSession();
@@ -93,9 +99,21 @@ export default function SessionToolbar({
             <div className="flex items-center space-x-3">
               <img src="/logo.png" alt="OpenDesk Logo" className="h-5 w-5" />
               <div>
-                <h2 className="font-semibold text-white">
-                  {session.name || `Session ${session.code}`}
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-semibold text-white">
+                    {session.name || `Session ${session.code}`}
+                  </h2>
+                  {myRoleLabel && (
+                    <Badge variant="outline" className="text-xs">
+                      {myRoleLabel}
+                    </Badge>
+                  )}
+                  {controlAdapterLabel && (
+                    <Badge variant="outline" className="text-[10px] opacity-80">
+                      {controlAdapterLabel}
+                    </Badge>
+                  )}
+                </div>
                 <div className="flex items-center space-x-2">
                   <Badge variant="outline" className="text-xs">
                     {session.code}
@@ -134,7 +152,7 @@ export default function SessionToolbar({
             {session.allowClipboard && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" onClick={onSyncClipboard}>
                     <Copy className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>

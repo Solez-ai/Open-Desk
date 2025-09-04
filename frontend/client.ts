@@ -36,6 +36,7 @@ export class Client {
     public readonly chat: chat.ServiceClient
     public readonly session: session.ServiceClient
     public readonly signaling: signaling.ServiceClient
+    public readonly user: user.ServiceClient
     private readonly options: ClientOptions
     private readonly target: string
 
@@ -53,6 +54,7 @@ export class Client {
         this.chat = new chat.ServiceClient(base)
         this.session = new session.ServiceClient(base)
         this.signaling = new signaling.ServiceClient(base)
+        this.user = new user.ServiceClient(base)
     }
 
     /**
@@ -129,6 +131,7 @@ export namespace chat {
  * Import the endpoint handlers to derive the types for the client.
  */
 import { createSession as api_session_create_createSession } from "~backend/session/create";
+import { deleteSession as api_session_delete_deleteSession } from "~backend/session/delete";
 import { generateSessionLink as api_session_generate_link_generateSessionLink } from "~backend/session/generate_link";
 import { getSession as api_session_get_getSession } from "~backend/session/get";
 import { joinSession as api_session_join_joinSession } from "~backend/session/join";
@@ -148,6 +151,7 @@ export namespace session {
         constructor(baseClient: BaseClient) {
             this.baseClient = baseClient
             this.createSession = this.createSession.bind(this)
+            this.deleteSession = this.deleteSession.bind(this)
             this.generateSessionLink = this.generateSessionLink.bind(this)
             this.getSession = this.getSession.bind(this)
             this.joinByToken = this.joinByToken.bind(this)
@@ -167,6 +171,16 @@ export namespace session {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI(`/sessions`, {method: "POST", body: JSON.stringify(params)})
             return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_session_create_createSession>
+        }
+
+        /**
+         * Permanently deletes a session and all related data.
+         * Only the session owner can delete, and only when the session has ended.
+         */
+        public async deleteSession(params: { sessionId: string }): Promise<ResponseType<typeof api_session_delete_deleteSession>> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI(`/sessions/${encodeURIComponent(params.sessionId)}`, {method: "DELETE", body: undefined})
+            return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_session_delete_deleteSession>
         }
 
         /**
@@ -296,6 +310,32 @@ export namespace signaling {
             // Now make the actual call to the API
             const resp = await this.baseClient.callTypedAPI(`/signaling/publish`, {method: "POST", body: JSON.stringify(params)})
             return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_signaling_publish_publishSignal>
+        }
+    }
+}
+
+/**
+ * Import the endpoint handlers to derive the types for the client.
+ */
+import { updateProfile as api_user_update_profile_updateProfile } from "~backend/user/update_profile";
+
+export namespace user {
+
+    export class ServiceClient {
+        private baseClient: BaseClient
+
+        constructor(baseClient: BaseClient) {
+            this.baseClient = baseClient
+            this.updateProfile = this.updateProfile.bind(this)
+        }
+
+        /**
+         * Updates the authenticated user's profile.
+         */
+        public async updateProfile(params: RequestType<typeof api_user_update_profile_updateProfile>): Promise<ResponseType<typeof api_user_update_profile_updateProfile>> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI(`/user/profile`, {method: "POST", body: JSON.stringify(params)})
+            return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_user_update_profile_updateProfile>
         }
     }
 }
