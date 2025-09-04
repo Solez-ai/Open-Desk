@@ -471,9 +471,9 @@ export default function SessionRoom() {
         };
       }
 
-      // If host, attach current local stream tracks to the new connection.
-      if (localStream) {
-        console.log("Attaching local stream tracks to new peer connection");
+      // If host has a local stream, attach tracks to the new connection immediately.
+      if (myRole === "host" && localStream) {
+        console.log("Attaching existing local stream tracks to new peer connection");
         localStream.getTracks().forEach((track) => {
           pc.addTrack(track, localStream);
         });
@@ -568,38 +568,49 @@ export default function SessionRoom() {
     }
   }, []);
 
-  // Add tracks to existing peer connections when stream becomes available
+  // Handle tracks being added to existing connections
   const addTracksToExistingConnections = useCallback((stream: MediaStream) => {
     console.log("Adding tracks to existing connections");
     connectionsRef.current.forEach((record, userId) => {
-      console.log("Adding tracks to connection with:", userId);
+      console.log("Processing connection with:", userId, "State:", record.pc.signalingState);
       
       // Remove old tracks first
       const senders = record.pc.getSenders();
       senders.forEach(sender => {
         if (sender.track) {
+          console.log("Removing old track:", sender.track.kind);
           record.pc.removeTrack(sender);
         }
       });
       
       // Add new tracks
       stream.getTracks().forEach((track) => {
-        console.log("Adding track:", track.kind, "to peer connection");
+        console.log("Adding track:", track.kind, "to peer connection with:", userId);
         record.pc.addTrack(track, stream);
       });
-      
-      // Renegotiate the connection
+    });
+  }, []);
+
+  // Renegotiate all connections when tracks are added/removed
+  const renegotiateConnections = useCallback(async () => {
+    console.log("Renegotiating all connections");
+    const promises = Array.from(connectionsRef.current.entries()).map(async ([userId, record]) => {
       if (record.pc.signalingState === "stable") {
-        console.log("Renegotiating connection with:", userId);
-        record.pc.createOffer().then(offer => {
-          return record.pc.setLocalDescription(offer);
-        }).then(() => {
-          return publishSignal("offer", record.pc.localDescription!, userId);
-        }).catch(err => {
-          console.error("Failed to renegotiate connection:", err);
-        });
+        try {
+          console.log("Creating new offer for:", userId);
+          const offer = await record.pc.createOffer();
+          await record.pc.setLocalDescription(offer);
+          await publishSignal("offer", offer, userId);
+          console.log("Renegotiation offer sent to:", userId);
+        } catch (err) {
+          console.error("Failed to renegotiate connection with:", userId, err);
+        }
+      } else {
+        console.log("Skipping renegotiation for:", userId, "- signaling state:", record.pc.signalingState);
       }
     });
+    
+    await Promise.all(promises);
   }, [publishSignal]);
 
   // Start/stop screen sharing (host)
@@ -615,11 +626,16 @@ export default function SessionRoom() {
         audio: true,
       });
       
-      console.log("Screen share stream created:", stream.getTracks().map(t => t.kind));
+      console.log("Screen share stream created with tracks:", stream.getTracks().map(t => `${t.kind}:${t.id}`));
       setLocalStream(stream);
 
-      // Add tracks to all existing connections and renegotiate
+      // Add tracks to all existing connections
       addTracksToExistingConnections(stream);
+
+      // Wait a bit for tracks to be added, then renegotiate
+      setTimeout(async () => {
+        await renegotiateConnections();
+      }, 100);
 
       toast({
         title: "Screen sharing started",
@@ -652,7 +668,7 @@ export default function SessionRoom() {
     } finally {
       setIsStartingShare(false);
     }
-  }, [addTracksToExistingConnections, handleOffer, toast]);
+  }, [addTracksToExistingConnections, renegotiateConnections, handleOffer, toast]);
 
   const stopScreenShare = useCallback(() => {
     const s = localStream;
@@ -661,13 +677,22 @@ export default function SessionRoom() {
     }
     setLocalStream(null);
     
-    // Stop all bitrate controllers
-    connectionsRef.current.forEach((rec) => {
-      rec.bitrateController?.stop();
+    // Remove tracks from all connections
+    connectionsRef.current.forEach((record) => {
+      const senders = record.pc.getSenders();
+      senders.forEach(sender => {
+        if (sender.track) {
+          record.pc.removeTrack(sender);
+        }
+      });
+      record.bitrateController?.stop();
     });
     
+    // Renegotiate to remove tracks
+    renegotiateConnections();
+    
     toast({ title: "Screen sharing stopped" });
-  }, [localStream, toast]);
+  }, [localStream, renegotiateConnections, toast]);
 
   // Send data messages (controller -> host) and file transfers
   const sendDataTo = useCallback((remoteUserId: string, message: ControlMessage) => {
