@@ -39,36 +39,45 @@ export const listParticipants = api<ListParticipantsRequest, ListParticipantsRes
       }
     }
 
-    const { data: rows, error: lErr } = await supabaseAdmin
+    // First get the participants
+    const { data: participantRows, error: lErr } = await supabaseAdmin
       .from("session_participants")
-      .select(`
-        *,
-        profiles (
-          username,
-          full_name,
-          avatar_url
-        )
-      `)
+      .select("*")
       .eq("session_id", req.sessionId);
 
     if (lErr) {
       throw APIError.internal("failed to list participants", lErr);
     }
 
-    const participants: Participant[] = (rows ?? []).map((p: any) => ({
-      id: p.id,
-      sessionId: p.session_id,
-      userId: p.user_id,
-      role: p.role,
-      status: p.status,
-      username: p.profiles?.username,
-      fullName: p.profiles?.full_name,
-      avatarUrl: p.profiles?.avatar_url,
-      connectedAt: p.connected_at ? new Date(p.connected_at) : null,
-      disconnectedAt: p.disconnected_at ? new Date(p.disconnected_at) : null,
-      createdAt: new Date(p.created_at),
-      updatedAt: new Date(p.updated_at),
-    }));
+    // Then get profile data for each participant
+    const participants: Participant[] = [];
+    
+    for (const p of participantRows || []) {
+      // Get profile data for this participant
+      const { data: profileData, error: profileErr } = await supabaseAdmin
+        .from("profiles")
+        .select("username, full_name, avatar_url")
+        .eq("id", p.user_id)
+        .maybeSingle();
+
+      // Don't fail if profile doesn't exist, just use null values
+      const profile = profileErr ? null : profileData;
+
+      participants.push({
+        id: p.id,
+        sessionId: p.session_id,
+        userId: p.user_id,
+        role: p.role,
+        status: p.status,
+        username: profile?.username || null,
+        fullName: profile?.full_name || null,
+        avatarUrl: profile?.avatar_url || null,
+        connectedAt: p.connected_at ? new Date(p.connected_at) : null,
+        disconnectedAt: p.disconnected_at ? new Date(p.disconnected_at) : null,
+        createdAt: new Date(p.created_at),
+        updatedAt: new Date(p.updated_at),
+      });
+    }
 
     return { participants };
   }
