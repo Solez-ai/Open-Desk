@@ -6,7 +6,7 @@ export const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 
 // Application settings
 export const APP_NAME = "OpenDesk";
-export const GITHUB_URL = "https://github.com/your-org/opendesk";
+export const GITHUB_URL = "https://github.com/Solez-ai/Open-Desk";
 
 // WebRTC configuration with optimized ICE servers
 export const ICE_SERVERS = [
