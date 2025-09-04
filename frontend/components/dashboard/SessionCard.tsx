@@ -10,8 +10,6 @@ import {
   Shield,
   Trash2,
   Share,
-  Link,
-  Settings,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -134,9 +132,39 @@ export default function SessionCard({ session, onRefresh }: SessionCardProps) {
     }
   };
 
+  const handleDelete = async () => {
+    const confirmed = window.confirm(
+      "This will permanently delete the session and all related data. This action cannot be undone. Continue?"
+    );
+    if (!confirmed) return;
+
+    setIsLoading(true);
+    try {
+      await backend.session.deleteSession({ sessionId: session.id });
+      toast({
+        title: "Session deleted",
+        description: "The session was permanently deleted.",
+      });
+      onRefresh();
+    } catch (error: any) {
+      console.error("Failed to delete session:", error);
+      const msg =
+        error?.message ||
+        "Failed to delete the session. Ensure the session is ended and you are the owner.";
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: msg,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const canJoin = session.status === "active" || session.status === "pending";
   const canTerminate = isOwner && (session.status === "active" || session.status === "pending");
   const canShare = isOwner && (session.status === "active" || session.status === "pending");
+  const canDelete = isOwner && session.status === "ended";
 
   return (
     <>
@@ -187,15 +215,29 @@ export default function SessionCard({ session, onRefresh }: SessionCardProps) {
                     Share Session
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuSeparator />
                 {canTerminate && (
-                  <DropdownMenuItem
-                    onClick={handleTerminate}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Terminate
-                  </DropdownMenuItem>
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={handleTerminate}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Terminate
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {canDelete && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={handleDelete}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Permanently
+                    </DropdownMenuItem>
+                  </>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
@@ -242,6 +284,20 @@ export default function SessionCard({ session, onRefresh }: SessionCardProps) {
                 onClick={handleCopyCode}
               >
                 <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
+          {canDelete && (
+            <div className="flex justify-end">
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDelete}
+                disabled={isLoading}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Permanently
               </Button>
             </div>
           )}

@@ -132,3 +132,11 @@ export interface RevokeTokenRequest {
 export interface RevokeTokenResponse {
   success: boolean;
 }
+
+export interface DeleteSessionRequest {
+  sessionId: string;
+}
+
+export interface DeleteSessionResponse {
+  success: boolean;
+}
