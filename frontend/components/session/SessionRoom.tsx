@@ -1008,9 +1008,9 @@ export default function SessionRoom() {
   }
 
   const HostView = () => (
-    <div className="h-full flex flex-col items-center justify-center bg-gray-800 text-white space-y-4">
+    <div className="h-full flex flex-col items-center justify-center bg-gray-800 text-white space-y-4 p-4">
       <Monitor className="h-24 w-24" />
-      <h2 className="text-2xl font-bold">
+      <h2 className="text-2xl font-bold text-center">
         {localStream ? "You are sharing your screen" : "You are hosting this session"}
       </h2>
       {!localStream ? (
@@ -1033,7 +1033,7 @@ export default function SessionRoom() {
           Stop screen sharing
         </Button>
       )}
-      <p className="text-sm text-gray-300">
+      <p className="text-sm text-gray-300 text-center">
         Controllers will connect automatically when you start sharing.
       </p>
 
@@ -1043,7 +1043,7 @@ export default function SessionRoom() {
           autoPlay
           muted
           playsInline
-          className="mt-2 max-w-[60%] max-h-[40vh] rounded border border-gray-700"
+          className="mt-4 max-w-[80%] max-h-[60vh] rounded-lg border-2 border-gray-700 shadow-2xl"
           ref={(el) => {
             if (el && localStream) {
               el.srcObject = localStream;
