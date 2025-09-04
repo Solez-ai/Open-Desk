@@ -21,7 +21,8 @@ export const deleteSession = api<DeleteSessionRequest, DeleteSessionResponse>(
       throw APIError.internal("failed to load session", sErr);
     }
     if (!sess) {
-      throw APIError.notFound("session not found");
+      // Already deleted, or doesn't exist. Return success to be idempotent.
+      return { success: true };
     }
 
     if (sess.owner_id !== auth.userID) {
