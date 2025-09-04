@@ -417,16 +417,31 @@ export default function SessionRoom() {
       }
 
       pc.ontrack = (event) => {
+        console.log("Received track:", event.track.kind, "from", remoteUserId);
+        
         // For controllers, set the host's stream.
-        record.remoteStream = event.streams[0];
-        setRemoteStream(event.streams[0]);
+        if (event.streams && event.streams[0]) {
+          record.remoteStream = event.streams[0];
+          console.log("Setting remote stream for controller");
+          setRemoteStream(event.streams[0]);
+        } else {
+          // Fallback: create stream from track
+          const stream = new MediaStream([event.track]);
+          record.remoteStream = stream;
+          console.log("Creating new stream from track for controller");
+          setRemoteStream(stream);
+        }
       };
 
       if (asOfferer) {
         const dc = pc.createDataChannel("control", { ordered: true });
         record.dc = dc;
-        dc.onopen = () => {};
-        dc.onclose = () => {};
+        dc.onopen = () => {
+          console.log("Data channel opened (offerer)");
+        };
+        dc.onclose = () => {
+          console.log("Data channel closed (offerer)");
+        };
         dc.onmessage = (e) => {
           try {
             const msg = JSON.parse(e.data) as ControlMessage;
@@ -439,8 +454,12 @@ export default function SessionRoom() {
         pc.ondatachannel = (event) => {
           record.dc = event.channel;
           const dc = event.channel;
-          dc.onopen = () => {};
-          dc.onclose = () => {};
+          dc.onopen = () => {
+            console.log("Data channel opened (answerer)");
+          };
+          dc.onclose = () => {
+            console.log("Data channel closed (answerer)");
+          };
           dc.onmessage = (e) => {
             try {
               const msg = JSON.parse(e.data) as ControlMessage;
@@ -454,6 +473,7 @@ export default function SessionRoom() {
 
       // If host, attach current local stream tracks to the new connection.
       if (localStream) {
+        console.log("Attaching local stream tracks to new peer connection");
         localStream.getTracks().forEach((track) => {
           pc.addTrack(track, localStream);
         });
@@ -466,11 +486,13 @@ export default function SessionRoom() {
 
   const createAndSendOfferTo = useCallback(
     async (remoteUserId: string) => {
+      console.log("Creating offer to:", remoteUserId);
       const rec = await ensurePeerConnection(remoteUserId, true);
       try {
         const offer = await rec.pc.createOffer();
         await rec.pc.setLocalDescription(offer);
         await publishSignal("offer", offer, remoteUserId);
+        console.log("Offer sent to:", remoteUserId);
       } catch (err) {
         console.error("Failed to create/send offer:", err);
         toast({
@@ -485,8 +507,11 @@ export default function SessionRoom() {
 
   const handleOffer = useCallback(
     async (senderUserId: string, offer: RTCSessionDescriptionInit) => {
+      console.log("Received offer from:", senderUserId);
+      
       // Host must have a local stream before answering; if not, queue the offer.
       if (myRole === "host" && !localStream) {
+        console.log("Host has no local stream, queuing offer");
         pendingOffersRef.current.set(senderUserId, offer);
         toast({
           title: "Connection request",
@@ -501,6 +526,7 @@ export default function SessionRoom() {
         const answer = await rec.pc.createAnswer();
         await rec.pc.setLocalDescription(answer);
         await publishSignal("answer", answer, senderUserId);
+        console.log("Answer sent to:", senderUserId);
       } catch (err) {
         console.error("Failed to handle offer:", err);
         toast({
@@ -514,11 +540,18 @@ export default function SessionRoom() {
   );
 
   const handleAnswer = useCallback(async (senderUserId: string, answer: RTCSessionDescriptionInit) => {
+    console.log("Received answer from:", senderUserId);
     const rec = connectionsRef.current.get(senderUserId);
-    if (!rec) return;
+    if (!rec) {
+      console.warn("No peer connection found for answer from:", senderUserId);
+      return;
+    }
     try {
       if (rec.pc.signalingState === "have-local-offer") {
         await rec.pc.setRemoteDescription(new RTCSessionDescription(answer));
+        console.log("Answer processed for:", senderUserId);
+      } else {
+        console.warn("Unexpected signaling state for answer:", rec.pc.signalingState);
       }
     } catch (err) {
       console.error("Failed to handle answer:", err);
@@ -535,6 +568,40 @@ export default function SessionRoom() {
     }
   }, []);
 
+  // Add tracks to existing peer connections when stream becomes available
+  const addTracksToExistingConnections = useCallback((stream: MediaStream) => {
+    console.log("Adding tracks to existing connections");
+    connectionsRef.current.forEach((record, userId) => {
+      console.log("Adding tracks to connection with:", userId);
+      
+      // Remove old tracks first
+      const senders = record.pc.getSenders();
+      senders.forEach(sender => {
+        if (sender.track) {
+          record.pc.removeTrack(sender);
+        }
+      });
+      
+      // Add new tracks
+      stream.getTracks().forEach((track) => {
+        console.log("Adding track:", track.kind, "to peer connection");
+        record.pc.addTrack(track, stream);
+      });
+      
+      // Renegotiate the connection
+      if (record.pc.signalingState === "stable") {
+        console.log("Renegotiating connection with:", userId);
+        record.pc.createOffer().then(offer => {
+          return record.pc.setLocalDescription(offer);
+        }).then(() => {
+          return publishSignal("offer", record.pc.localDescription!, userId);
+        }).catch(err => {
+          console.error("Failed to renegotiate connection:", err);
+        });
+      }
+    });
+  }, [publishSignal]);
+
   // Start/stop screen sharing (host)
   const startScreenShare = useCallback(async () => {
     setIsStartingShare(true);
@@ -547,19 +614,12 @@ export default function SessionRoom() {
         },
         audio: true,
       });
+      
+      console.log("Screen share stream created:", stream.getTracks().map(t => t.kind));
       setLocalStream(stream);
 
-      // Attach to all existing connections (host side).
-      connectionsRef.current.forEach((rec) => {
-        stream.getTracks().forEach((track) => {
-          rec.pc.addTrack(track, stream);
-        });
-        
-        // Start bitrate controller for each connection when stream is available
-        if (rec.bitrateController) {
-          rec.bitrateController.start();
-        }
-      });
+      // Add tracks to all existing connections and renegotiate
+      addTracksToExistingConnections(stream);
 
       toast({
         title: "Screen sharing started",
@@ -567,13 +627,17 @@ export default function SessionRoom() {
       });
 
       // Process any pending offers now that we have a local stream.
-      for (const [sender, offer] of pendingOffersRef.current.entries()) {
+      const pendingOffers = Array.from(pendingOffersRef.current.entries());
+      pendingOffersRef.current.clear();
+      
+      for (const [sender, offer] of pendingOffers) {
+        console.log("Processing pending offer from:", sender);
         await handleOffer(sender, offer);
-        pendingOffersRef.current.delete(sender);
       }
 
       // Handle stop event
       const handleEnded = () => {
+        console.log("Screen share ended");
         stopScreenShare();
       };
       stream.getVideoTracks().forEach((t) => (t.onended = handleEnded));
@@ -588,7 +652,7 @@ export default function SessionRoom() {
     } finally {
       setIsStartingShare(false);
     }
-  }, [handleOffer, toast]);
+  }, [addTracksToExistingConnections, handleOffer, toast]);
 
   const stopScreenShare = useCallback(() => {
     const s = localStream;
@@ -744,6 +808,7 @@ export default function SessionRoom() {
       if (myRole === "controller" && participant.role === "host" && participant.status === "joined") {
         const exists = connectionsRef.current.has(participant.userId);
         if (!exists) {
+          console.log("Host joined, creating offer");
           await createAndSendOfferTo(participant.userId);
         }
       }
@@ -774,6 +839,8 @@ export default function SessionRoom() {
       if (signal.recipient_user_id !== user.id) return;
 
       const payload = signal.payload;
+      console.log("Received signal:", signal.type, "from", signal.sender_user_id);
+      
       switch (signal.type) {
         case "offer":
           await handleOffer(signal.sender_user_id, payload);
@@ -827,6 +894,7 @@ export default function SessionRoom() {
     if (myRole === "controller" && hostParticipant) {
       const exists = connectionsRef.current.has(hostParticipant.userId);
       if (!exists) {
+        console.log("Controller detected host, creating offer");
         createAndSendOfferTo(hostParticipant.userId);
       }
     }
@@ -988,6 +1056,19 @@ export default function SessionRoom() {
 
   const ControllerView = () => {
     const controllerName = user?.user_metadata?.username || user?.email || "You";
+    
+    if (!remoteStream) {
+      return (
+        <div className="h-full flex flex-col items-center justify-center bg-gray-800 text-white space-y-4">
+          <Monitor className="h-24 w-24 opacity-50" />
+          <h2 className="text-2xl font-bold">Waiting for host to share screen</h2>
+          <p className="text-sm text-gray-300">
+            The host needs to start screen sharing before you can view their screen.
+          </p>
+        </div>
+      );
+    }
+    
     return (
       <RemoteDisplay
         remoteStream={remoteStream}
