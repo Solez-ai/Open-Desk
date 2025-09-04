@@ -13,6 +13,7 @@ interface AuthContextType {
   getToken: () => Promise<string | null>;
   isSignedIn: boolean;
   isConfigured: boolean;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -102,6 +103,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return currentSession?.access_token ?? null;
   };
 
+  const refreshUser = async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase.auth.refreshSession();
+    if (data.user) {
+      setUser(data.user);
+    }
+    if (data.session) {
+      setSession(data.session);
+    }
+    if (error) {
+      console.error("Error refreshing user session:", error);
+    }
+  };
+
   const isSignedIn = !!user && isConfigured;
 
   return (
@@ -116,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       getToken,
       isSignedIn,
       isConfigured,
+      refreshUser,
     }}>
       {children}
     </AuthContext.Provider>

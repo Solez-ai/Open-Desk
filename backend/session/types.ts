@@ -19,6 +19,9 @@ export interface Participant {
   userId: string;
   role: ParticipantRole;
   status: "joined" | "left";
+  username?: string | null;
+  fullName?: string | null;
+  avatarUrl?: string | null;
   connectedAt: Date | null;
   disconnectedAt: Date | null;
   createdAt: Date;

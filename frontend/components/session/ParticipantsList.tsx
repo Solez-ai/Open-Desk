@@ -72,15 +72,16 @@ export default function ParticipantsList({ participants, onClose }: Participants
                 className="flex items-center space-x-3 p-3 rounded-lg bg-gray-800 border border-gray-700"
               >
                 <Avatar className="h-10 w-10">
+                  <AvatarImage src={participant.avatarUrl || undefined} />
                   <AvatarFallback className="bg-gray-700 text-white">
-                    {participant.userId.slice(0, 2).toUpperCase()}
+                    {participant.fullName?.[0] || participant.username?.[0] || participant.userId.slice(0, 1).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-2">
                     <p className="text-sm font-medium text-white truncate">
-                      User {participant.userId.slice(-8)}
+                      {participant.fullName || participant.username || `User ${participant.userId.slice(-6)}`}
                     </p>
                     {getParticipantIcon(participant.role)}
                   </div>
@@ -103,7 +104,6 @@ export default function ParticipantsList({ participants, onClose }: Participants
                   )}
                 </div>
 
-                {/* Owner indicator */}
                 {participant.role === "host" && (
                   <Crown className="h-4 w-4 text-yellow-400" />
                 )}

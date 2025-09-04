@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { useAuth } from "../../contexts/AuthContext";
 import { useSupabase } from "../../contexts/SupabaseContext";
+import { useSession } from "../../contexts/SessionContext";
 
 interface ChatPanelProps {
   sessionId: string;
@@ -30,6 +31,7 @@ export default function ChatPanel({ sessionId, onClose }: ChatPanelProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const { supabase } = useSupabase();
+  const { participants } = useSession();
   const seenIdsRef = useRef<Set<string>>(new Set());
 
   const scrollToBottom = () => {
@@ -39,6 +41,12 @@ export default function ChatPanel({ sessionId, onClose }: ChatPanelProps) {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const getSenderName = (senderId: string) => {
+    if (senderId === user?.id) return "You";
+    const participant = participants.find(p => p.userId === senderId);
+    return participant?.username || participant?.fullName || `User ${senderId.slice(0, 6)}`;
+  };
 
   // Load existing messages and subscribe to new ones
   useEffect(() => {
@@ -175,7 +183,7 @@ export default function ChatPanel({ sessionId, onClose }: ChatPanelProps) {
               <div key={msg.id} className="space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-blue-400">
-                    {msg.senderUserId === (user?.id ?? "") ? "You" : msg.senderUserId.slice(0, 6)}
+                    {getSenderName(msg.senderUserId)}
                   </span>
                   <span className="text-xs text-gray-500">
                     {formatDistanceToNow(msg.createdAt, { addSuffix: true })}

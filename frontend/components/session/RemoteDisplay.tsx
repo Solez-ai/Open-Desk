@@ -7,12 +7,14 @@ interface RemoteDisplayProps {
   remoteStream: MediaStream | null;
   sendControlMessage: (message: ControlMessage) => void;
   isControlEnabled: boolean;
+  cursorName?: string;
 }
 
 export default function RemoteDisplay({
   remoteStream,
   sendControlMessage,
   isControlEnabled,
+  cursorName,
 }: RemoteDisplayProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -85,7 +87,7 @@ export default function RemoteDisplay({
         className="w-full h-full object-contain"
       />
       {isControlEnabled && (
-        <RemoteCursor position={cursorPosition} name={user?.email || "You"} />
+        <RemoteCursor position={cursorPosition} name={cursorName} />
       )}
     </div>
   );

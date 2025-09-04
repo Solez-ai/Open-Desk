@@ -1,4 +1,5 @@
 import { useAuth } from "../../contexts/AuthContext";
+import { Link } from "react-router-dom";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,8 +14,8 @@ import { LogOut, Settings, User } from "lucide-react";
 export default function UserMenu() {
   const { user, signOut } = useAuth();
 
-  const userInitials = user?.email ? user.email[0].toUpperCase() : "U";
-  const userName = user?.user_metadata?.full_name || user?.email || "User";
+  const userInitials = user?.user_metadata?.username?.[0].toUpperCase() || user?.email?.[0].toUpperCase() || "U";
+  const userName = user?.user_metadata?.full_name || user?.user_metadata?.username || user?.email || "User";
 
   const handleSignOut = async () => {
     try {
@@ -44,13 +45,17 @@ export default function UserMenu() {
           </div>
         </div>
         <DropdownMenuSeparator />
-        <DropdownMenuItem>
-          <User className="mr-2 h-4 w-4" />
-          <span>Profile</span>
+        <DropdownMenuItem asChild>
+          <Link to="/settings">
+            <User className="mr-2 h-4 w-4" />
+            <span>Profile</span>
+          </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem>
-          <Settings className="mr-2 h-4 w-4" />
-          <span>Settings</span>
+        <DropdownMenuItem asChild>
+          <Link to="/settings">
+            <Settings className="mr-2 h-4 w-4" />
+            <span>Settings</span>
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

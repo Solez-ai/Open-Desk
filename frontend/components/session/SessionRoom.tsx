@@ -106,12 +106,15 @@ export default function SessionRoom() {
   );
 
   // Helpers to map Supabase row -> Participant type
-  const mapParticipant = (row: SupabaseParticipantRow): Participant => ({
+  const mapParticipant = (row: any): Participant => ({
     id: row.id,
     sessionId: row.session_id,
     userId: row.user_id,
     role: row.role,
     status: row.status,
+    username: row.profiles?.username,
+    fullName: row.profiles?.full_name,
+    avatarUrl: row.profiles?.avatar_url,
     connectedAt: row.connected_at ? new Date(row.connected_at) : null,
     disconnectedAt: row.disconnected_at ? new Date(row.disconnected_at) : null,
     createdAt: new Date(row.created_at),
@@ -734,7 +737,7 @@ export default function SessionRoom() {
     if (!sessionId || !user) return;
 
     const handleNewParticipant = async (raw: any) => {
-      const participant = mapParticipant(raw as SupabaseParticipantRow);
+      const participant = mapParticipant(raw);
       updateParticipant(participant);
 
       // If controller and a host joined, initiate offer to host.
@@ -983,13 +986,17 @@ export default function SessionRoom() {
     </div>
   );
 
-  const ControllerView = () => (
-    <RemoteDisplay
-      remoteStream={remoteStream}
-      sendControlMessage={sendData}
-      isControlEnabled={isControlEnabled}
-    />
-  );
+  const ControllerView = () => {
+    const controllerName = user?.user_metadata?.username || user?.email || "You";
+    return (
+      <RemoteDisplay
+        remoteStream={remoteStream}
+        sendControlMessage={sendData}
+        isControlEnabled={isControlEnabled}
+        cursorName={controllerName}
+      />
+    );
+  };
 
   const myRoleLabel = myRole ? (myRole === "host" ? "Host" : "Controller") : undefined;
 

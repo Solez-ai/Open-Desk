@@ -6,7 +6,6 @@
 -- Extensions
 create extension if not exists pgcrypto;
 
--- Enums (using check constraints instead to reduce coupling)
 -- Tables
 
 create table if not exists public.sessions (
@@ -80,6 +79,17 @@ create table if not exists public.chat_messages (
 create index if not exists chat_messages_session_id_idx on public.chat_messages(session_id);
 create index if not exists chat_messages_created_at_idx on public.chat_messages(created_at);
 
+-- Profiles table
+create table if not exists public.profiles (
+  id uuid primary key references auth.users on delete cascade,
+  updated_at timestamptz,
+  username text unique,
+  full_name text,
+  avatar_url text,
+
+  constraint username_length check (char_length(username) >= 3)
+);
+
 -- updated_at trigger
 create or replace function public.set_updated_at()
 returns trigger
@@ -100,12 +110,37 @@ create trigger set_participants_updated_at
 before update on public.session_participants
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_profiles_updated_at on public.profiles;
+create trigger set_profiles_updated_at
+before update on public.profiles
+for each row execute function public.set_updated_at();
+
+-- Trigger to create a profile for new users
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.profiles (id, full_name, avatar_url, username)
+  values (new.id, new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'avatar_url', new.raw_user_meta_data->>'username');
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+
 -- Realtime publication (enable replication)
 -- Ensure the supabase_realtime publication exists (it does by default on Supabase projects).
 alter publication supabase_realtime add table public.sessions;
 alter publication supabase_realtime add table public.session_participants;
 alter publication supabase_realtime add table public.signals;
 alter publication supabase_realtime add table public.chat_messages;
+alter publication supabase_realtime add table public.profiles;
 
 -- Row Level Security
 alter table public.sessions enable row level security;
@@ -113,6 +148,7 @@ alter table public.session_participants enable row level security;
 alter table public.session_tokens enable row level security;
 alter table public.signals enable row level security;
 alter table public.chat_messages enable row level security;
+alter table public.profiles enable row level security;
 
 -- Policies
 
@@ -306,5 +342,33 @@ begin
   end if;
 end$$;
 
--- Optional cleanup: expire old signals/messages (retention policy) - handled externally via cron or Supabase scheduled tasks.
+-- Profiles
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies where schemaname = 'public' and tablename = 'profiles' and policyname = 'select_all_profiles'
+  ) then
+    create policy select_all_profiles on public.profiles
+      for select
+      to authenticated
+      using ( true );
+  end if;
 
+  if not exists (
+    select 1 from pg_policies where schemaname = 'public' and tablename = 'profiles' and policyname = 'insert_own_profile'
+  ) then
+    create policy insert_own_profile on public.profiles
+      for insert
+      to authenticated
+      with check ( auth.uid() = id );
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname = 'public' and tablename = 'profiles' and policyname = 'update_own_profile'
+  ) then
+    create policy update_own_profile on public.profiles
+      for update
+      to authenticated
+      using ( auth.uid() = id );
+  end if;
+end$$;

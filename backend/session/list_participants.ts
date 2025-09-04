@@ -41,19 +41,29 @@ export const listParticipants = api<ListParticipantsRequest, ListParticipantsRes
 
     const { data: rows, error: lErr } = await supabaseAdmin
       .from("session_participants")
-      .select("*")
+      .select(`
+        *,
+        profiles (
+          username,
+          full_name,
+          avatar_url
+        )
+      `)
       .eq("session_id", req.sessionId);
 
     if (lErr) {
       throw APIError.internal("failed to list participants", lErr);
     }
 
-    const participants: Participant[] = (rows ?? []).map((p) => ({
+    const participants: Participant[] = (rows ?? []).map((p: any) => ({
       id: p.id,
       sessionId: p.session_id,
       userId: p.user_id,
       role: p.role,
       status: p.status,
+      username: p.profiles?.username,
+      fullName: p.profiles?.full_name,
+      avatarUrl: p.profiles?.avatar_url,
       connectedAt: p.connected_at ? new Date(p.connected_at) : null,
       disconnectedAt: p.disconnected_at ? new Date(p.disconnected_at) : null,
       createdAt: new Date(p.created_at),

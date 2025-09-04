@@ -6,6 +6,7 @@ import SessionRoom from "./session/SessionRoom";
 import JoinByLink from "./session/JoinByLink";
 import LoadingSpinner from "./ui/LoadingSpinner";
 import ConfigurationError from "./ui/ConfigurationError";
+import SettingsPage from "./settings/SettingsPage";
 
 export default function AppRoutes() {
   const { loading, isSignedIn, isConfigured } = useAuth();
@@ -39,6 +40,10 @@ export default function AppRoutes() {
       <Route 
         path="/join/:token" 
         element={isSignedIn ? <JoinByLink /> : <Navigate to="/auth" replace />} 
+      />
+      <Route 
+        path="/settings" 
+        element={isSignedIn ? <SettingsPage /> : <Navigate to="/auth" replace />} 
       />
       <Route 
         path="/" 
