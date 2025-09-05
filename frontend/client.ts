@@ -130,6 +130,7 @@ export namespace chat {
 /**
  * Import the endpoint handlers to derive the types for the client.
  */
+import { broadcastStatus as api_session_broadcast_status_broadcastStatus } from "~backend/session/broadcast_status";
 import { createSession as api_session_create_createSession } from "~backend/session/create";
 import { deleteSession as api_session_delete_deleteSession } from "~backend/session/delete";
 import { generateSessionLink as api_session_generate_link_generateSessionLink } from "~backend/session/generate_link";
@@ -150,6 +151,7 @@ export namespace session {
 
         constructor(baseClient: BaseClient) {
             this.baseClient = baseClient
+            this.broadcastStatus = this.broadcastStatus.bind(this)
             this.createSession = this.createSession.bind(this)
             this.deleteSession = this.deleteSession.bind(this)
             this.generateSessionLink = this.generateSessionLink.bind(this)
@@ -162,6 +164,15 @@ export namespace session {
             this.listSessionTokens = this.listSessionTokens.bind(this)
             this.revokeSessionToken = this.revokeSessionToken.bind(this)
             this.terminateSession = this.terminateSession.bind(this)
+        }
+
+        /**
+         * Broadcasts session status changes to all participants
+         */
+        public async broadcastStatus(params: { sessionId: string }): Promise<ResponseType<typeof api_session_broadcast_status_broadcastStatus>> {
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI(`/sessions/${encodeURIComponent(params.sessionId)}/broadcast-status`, {method: "POST", body: undefined})
+            return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_session_broadcast_status_broadcastStatus>
         }
 
         /**

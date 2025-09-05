@@ -143,3 +143,13 @@ export interface DeleteSessionRequest {
 export interface DeleteSessionResponse {
   success: boolean;
 }
+
+export interface BroadcastStatusRequest {
+  sessionId: string;
+}
+
+export interface BroadcastStatusResponse {
+  success: boolean;
+  status: SessionStatus;
+  participantsNotified: number;
+}
