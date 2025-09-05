@@ -1,6 +1,6 @@
 import { api, APIError } from "encore.dev/api";
 import { getAuthData } from "~encore/auth";
-import supabaseAdmin from "../session/supabase"; // reuse the client
+import supabaseAdmin from "./supabase"; // use service-local client
 import type { UpdateProfileRequest, UpdateProfileResponse, Profile } from "./types";
 
 // Updates the authenticated user's profile.
@@ -26,7 +26,8 @@ export const updateProfile = api<UpdateProfileRequest, UpdateProfileResponse>(
       .single();
 
     if (pErr) {
-      if (pErr.code === "23505") { // unique_violation
+      if (pErr.code === "23505") {
+        // unique_violation
         throw APIError.alreadyExists("username is already taken");
       }
       throw APIError.internal("failed to update profile", pErr);
@@ -39,10 +40,9 @@ export const updateProfile = api<UpdateProfileRequest, UpdateProfileResponse>(
     if (username !== undefined) metaUpdates.username = username;
 
     if (Object.keys(metaUpdates).length > 0) {
-      const { error: uErr } = await supabaseAdmin.auth.admin.updateUserById(
-        auth.userID,
-        { user_metadata: metaUpdates }
-      );
+      const { error: uErr } = await supabaseAdmin.auth.admin.updateUserById(auth.userID, {
+        user_metadata: metaUpdates,
+      });
       if (uErr) {
         // This is not critical if the profile table updated, but log it.
         console.error("Failed to update user_metadata:", uErr);
