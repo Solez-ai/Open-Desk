@@ -40,7 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("Auth state change:", event, session?.user?.id);
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
@@ -97,27 +98,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const getToken = async (): Promise<string | null> => {
-    if (!supabase || !session || !isConfigured) return null;
+    if (!supabase || !session || !isConfigured) {
+      console.warn("No supabase, session, or not configured when getting token");
+      return null;
+    }
     
-    const { data: { session: currentSession } } = await supabase.auth.getSession();
-    return currentSession?.access_token ?? null;
+    try {
+      const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+      
+      if (error) {
+        console.error("Error getting session for token:", error);
+        return null;
+      }
+      
+      if (!currentSession) {
+        console.warn("No current session when getting token");
+        return null;
+      }
+      
+      return currentSession.access_token;
+    } catch (error) {
+      console.error("Exception getting token:", error);
+      return null;
+    }
   };
 
   const refreshUser = async () => {
     if (!supabase) return;
-    const { data, error } = await supabase.auth.refreshSession();
-    if (data.user) {
-      setUser(data.user);
-    }
-    if (data.session) {
-      setSession(data.session);
-    }
-    if (error) {
-      console.error("Error refreshing user session:", error);
+    
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (data.user) {
+        setUser(data.user);
+      }
+      if (data.session) {
+        setSession(data.session);
+      }
+      if (error) {
+        console.error("Error refreshing user session:", error);
+      }
+    } catch (error) {
+      console.error("Exception refreshing user:", error);
     }
   };
 
-  const isSignedIn = !!user && isConfigured;
+  const isSignedIn = !!user && !!session && isConfigured;
 
   return (
     <AuthContext.Provider value={{

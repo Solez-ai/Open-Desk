@@ -8,8 +8,17 @@ export function useBackend() {
   
   return backend.with({
     auth: async () => {
-      const token = await getToken();
-      return token ? { authorization: `Bearer ${token}` } : {};
+      try {
+        const token = await getToken();
+        if (!token) {
+          console.warn("No auth token available");
+          return {};
+        }
+        return { authorization: `Bearer ${token}` };
+      } catch (error) {
+        console.error("Failed to get auth token:", error);
+        return {};
+      }
     }
   });
 }

@@ -36,7 +36,8 @@ export default function JoinSessionDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!sessionCode.trim()) {
+    const trimmedCode = sessionCode.trim().toUpperCase();
+    if (!trimmedCode) {
       toast({
         variant: "destructive",
         title: "Error",
@@ -45,13 +46,26 @@ export default function JoinSessionDialog({
       return;
     }
 
+    if (trimmedCode.length !== 6) {
+      toast({
+        variant: "destructive",
+        title: "Error", 
+        description: "Session code must be 6 characters long.",
+      });
+      return;
+    }
+
     setIsLoading(true);
 
     try {
+      console.log("Attempting to join session with code:", trimmedCode, "role:", role);
+      
       const result = await backend.session.joinSession({
-        code: sessionCode.trim().toUpperCase(),
+        code: trimmedCode,
         role,
       });
+
+      console.log("Join session result:", result);
 
       toast({
         title: "Joined session",
@@ -65,12 +79,29 @@ export default function JoinSessionDialog({
       // Reset form
       setSessionCode("");
       setRole("controller");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to join session:", error);
+      
+      let errorMessage = "Failed to join session. Please try again.";
+      
+      if (error?.message) {
+        if (error.message.includes("not found") || error.message.includes("No session found")) {
+          errorMessage = "Session not found. Please check the code and try again.";
+        } else if (error.message.includes("ended")) {
+          errorMessage = "This session has already ended.";
+        } else if (error.message.includes("permission") || error.message.includes("denied")) {
+          errorMessage = "You don't have permission to join this session.";
+        } else if (error.message.includes("authentication") || error.message.includes("unauthenticated")) {
+          errorMessage = "Please sign in again and try joining the session.";
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       toast({
         variant: "destructive",
-        title: "Error",
-        description: "Failed to join session. Please check the code and try again.",
+        title: "Join Failed",
+        description: errorMessage,
       });
     } finally {
       setIsLoading(false);
@@ -98,9 +129,10 @@ export default function JoinSessionDialog({
               disabled={isLoading}
               maxLength={6}
               className="text-center text-lg font-mono tracking-widest focus:ring-emerald-500/30"
+              autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">
-              Codes are not case sensitive.
+              Enter the 6-character session code shared by the host.
             </p>
           </div>
 
@@ -172,7 +204,7 @@ export default function JoinSessionDialog({
             </Button>
             <Button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || !sessionCode.trim()}
               className="bg-emerald-600 hover:bg-emerald-600/90 text-white"
             >
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
