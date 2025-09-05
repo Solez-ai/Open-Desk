@@ -39,45 +39,46 @@ export const listParticipants = api<ListParticipantsRequest, ListParticipantsRes
       }
     }
 
-    // First get the participants
+    // Get participants with profile data using a join
     const { data: participantRows, error: lErr } = await supabaseAdmin
       .from("session_participants")
-      .select("*")
+      .select(`
+        id,
+        session_id,
+        user_id,
+        role,
+        status,
+        connected_at,
+        disconnected_at,
+        created_at,
+        updated_at,
+        profiles!inner (
+          username,
+          full_name,
+          avatar_url
+        )
+      `)
       .eq("session_id", req.sessionId);
 
     if (lErr) {
       throw APIError.internal("failed to list participants", lErr);
     }
 
-    // Then get profile data for each participant
-    const participants: Participant[] = [];
-    
-    for (const p of participantRows || []) {
-      // Get profile data for this participant
-      const { data: profileData, error: profileErr } = await supabaseAdmin
-        .from("profiles")
-        .select("username, full_name, avatar_url")
-        .eq("id", p.user_id)
-        .maybeSingle();
-
-      // Don't fail if profile doesn't exist, just use null values
-      const profile = profileErr ? null : profileData;
-
-      participants.push({
-        id: p.id,
-        sessionId: p.session_id,
-        userId: p.user_id,
-        role: p.role,
-        status: p.status,
-        username: profile?.username || null,
-        fullName: profile?.full_name || null,
-        avatarUrl: profile?.avatar_url || null,
-        connectedAt: p.connected_at ? new Date(p.connected_at) : null,
-        disconnectedAt: p.disconnected_at ? new Date(p.disconnected_at) : null,
-        createdAt: new Date(p.created_at),
-        updatedAt: new Date(p.updated_at),
-      });
-    }
+    // Map the results to the expected format
+    const participants: Participant[] = (participantRows || []).map((p) => ({
+      id: p.id,
+      sessionId: p.session_id,
+      userId: p.user_id,
+      role: p.role as "host" | "controller",
+      status: p.status as "joined" | "left",
+      username: p.profiles?.username || null,
+      fullName: p.profiles?.full_name || null,
+      avatarUrl: p.profiles?.avatar_url || null,
+      connectedAt: p.connected_at ? new Date(p.connected_at) : null,
+      disconnectedAt: p.disconnected_at ? new Date(p.disconnected_at) : null,
+      createdAt: new Date(p.created_at),
+      updatedAt: new Date(p.updated_at),
+    }));
 
     return { participants };
   }

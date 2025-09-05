@@ -93,67 +93,84 @@ export class BrowserEmulatedAdapter implements ControlAdapter {
     this.canvas.height = window.innerHeight;
 
     // Draw cursor
-    this.ctx.fillStyle = 'red';
+    this.ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
     this.ctx.beginPath();
-    this.ctx.arc(screenX, screenY, 8, 0, 2 * Math.PI);
+    this.ctx.arc(screenX, screenY, 12, 0, 2 * Math.PI);
+    this.ctx.fill();
+
+    // Draw inner dot
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    this.ctx.beginPath();
+    this.ctx.arc(screenX, screenY, 4, 0, 2 * Math.PI);
     this.ctx.fill();
 
     // Draw action indicator
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    this.ctx.fillRect(screenX + 20, screenY - 25, 100, 30);
     this.ctx.fillStyle = 'white';
-    this.ctx.font = '14px Arial';
-    this.ctx.fillText(action, screenX + 15, screenY - 15);
+    this.ctx.font = 'bold 14px Arial';
+    this.ctx.fillText(action, screenX + 25, screenY - 5);
 
     // Hide after a short delay
     setTimeout(() => {
       if (this.canvas) this.canvas.style.display = 'none';
       if (this.overlay) this.overlay.style.display = 'none';
-    }, 1000);
+    }, 1500);
   }
 
   onMouseMove(x: number, y: number): void {
     if (!this.isInitialized) return;
-    console.log(`Mouse move: ${x}, ${y}`);
-    this.showVisualFeedback(x, y, 'Move');
+    console.log(`[Host] Mouse move: ${x.toFixed(3)}, ${y.toFixed(3)}`);
+    this.showVisualFeedback(x, y, 'Mouse Move');
   }
 
   onMouseDown(x: number, y: number, button: number): void {
     if (!this.isInitialized) return;
     const buttonName = button === 0 ? 'Left' : button === 1 ? 'Middle' : 'Right';
-    console.log(`Mouse down: ${buttonName} at ${x}, ${y}`);
-    this.showVisualFeedback(x, y, `${buttonName} Down`);
+    console.log(`[Host] Mouse down: ${buttonName} at ${x.toFixed(3)}, ${y.toFixed(3)}`);
+    this.showVisualFeedback(x, y, `${buttonName} Click`);
   }
 
   onMouseUp(x: number, y: number, button: number): void {
     if (!this.isInitialized) return;
     const buttonName = button === 0 ? 'Left' : button === 1 ? 'Middle' : 'Right';
-    console.log(`Mouse up: ${buttonName} at ${x}, ${y}`);
-    this.showVisualFeedback(x, y, `${buttonName} Up`);
+    console.log(`[Host] Mouse up: ${buttonName} at ${x.toFixed(3)}, ${y.toFixed(3)}`);
   }
 
   onScroll(deltaX: number, deltaY: number): void {
     if (!this.isInitialized) return;
-    console.log(`Scroll: ${deltaX}, ${deltaY}`);
+    console.log(`[Host] Scroll: deltaX=${deltaX}, deltaY=${deltaY}`);
     // Show scroll indicator in center of screen
-    this.showVisualFeedback(0.5, 0.5, `Scroll: ${deltaY > 0 ? 'Down' : 'Up'}`);
+    this.showVisualFeedback(0.5, 0.5, `Scroll ${deltaY > 0 ? '↓' : '↑'}`);
   }
 
   onKeyDown(key: string, code: string): void {
     if (!this.isInitialized) return;
-    console.log(`Key down: ${key} (${code})`);
+    console.log(`[Host] Key down: ${key} (${code})`);
     // Show key indicator in center of screen
-    this.showVisualFeedback(0.5, 0.5, `Key: ${key}`);
+    this.showVisualFeedback(0.5, 0.3, `Key: ${key}`);
   }
 
   onKeyUp(key: string, code: string): void {
     if (!this.isInitialized) return;
-    console.log(`Key up: ${key} (${code})`);
+    console.log(`[Host] Key up: ${key} (${code})`);
   }
 
   async onClipboard(content: string): Promise<void> {
     if (!this.isInitialized) return;
-    console.log(`Clipboard: ${content.substring(0, 50)}...`);
-    // Show clipboard indicator
-    this.showVisualFeedback(0.5, 0.5, 'Clipboard');
+    console.log(`[Host] Clipboard content received: ${content.substring(0, 50)}...`);
+    
+    try {
+      // Try to write to system clipboard
+      await navigator.clipboard.writeText(content);
+      console.log('[Host] Clipboard content written to system clipboard');
+      
+      // Show visual feedback
+      this.showVisualFeedback(0.5, 0.7, 'Clipboard Synced');
+    } catch (error) {
+      console.error('[Host] Failed to write to clipboard:', error);
+      this.showVisualFeedback(0.5, 0.7, 'Clipboard Failed');
+    }
   }
 }
 
@@ -237,7 +254,7 @@ export class LocalAgentAdapter implements ControlAdapter {
     
     // Send command to native agent
     // In a real implementation, this would use proper IPC
-    console.log(`Sending to agent: ${command}`, data);
+    console.log(`[Host] Sending to native agent: ${command}`, data);
     
     // Simulate agent communication
     if (this.agentWindow) {
@@ -246,6 +263,11 @@ export class LocalAgentAdapter implements ControlAdapter {
         command,
         data
       }, '*');
+    }
+
+    // For development, simulate successful execution
+    if (import.meta.env.DEV) {
+      console.log(`[Host] Native agent executed: ${command}`);
     }
   }
 
@@ -282,5 +304,13 @@ export class LocalAgentAdapter implements ControlAdapter {
   async onClipboard(content: string): Promise<void> {
     if (!this.isInitialized) return;
     this.sendToAgent('clipboard', { content });
+    
+    // Also update local clipboard as fallback
+    try {
+      await navigator.clipboard.writeText(content);
+      console.log('[Host] Clipboard content written to system clipboard via native agent');
+    } catch (error) {
+      console.error('[Host] Failed to write to clipboard via native agent:', error);
+    }
   }
 }

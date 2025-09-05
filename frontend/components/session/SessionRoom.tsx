@@ -250,7 +250,9 @@ export default function SessionRoom() {
 
   // Handle incoming data messages (controller -> host and file transfers, clipboard)
   const handleDataMessage = useCallback(
-    async (message: ControlMessage) => {
+    async (message: ControlMessage, senderUserId?: string) => {
+      console.log("Received data message:", message.type, "from", senderUserId);
+
       // File transfer handling
       if (message.type === "file-meta") {
         const meta = message as FileMetaMessage;
@@ -333,11 +335,22 @@ export default function SessionRoom() {
       }
 
       // Remote control events (host-side)
-      if (myRole !== "host") return;
-      if (!isControlEnabled) return;
+      if (myRole !== "host") {
+        console.log("Not host, ignoring control message");
+        return;
+      }
+      if (!isControlEnabled) {
+        console.log("Control disabled, ignoring control message");
+        return;
+      }
 
       const adapter = controlAdapterRef.current;
-      if (!adapter) return;
+      if (!adapter) {
+        console.log("No control adapter available");
+        return;
+      }
+
+      console.log("Processing control message:", message.type);
 
       switch (message.type) {
         case "mousemove":
@@ -369,6 +382,8 @@ export default function SessionRoom() {
       let existing = connectionsRef.current.get(remoteUserId);
       if (existing) return existing;
 
+      console.log(`Creating new peer connection with ${remoteUserId} (asOfferer: ${asOfferer})`);
+
       // Get optimized ICE configuration
       const optimizer = ICEOptimizer.getInstance();
       const iceConfig = await optimizer.getOptimizedConfig();
@@ -381,6 +396,7 @@ export default function SessionRoom() {
           }
         },
         (state) => {
+          console.log(`Connection state with ${remoteUserId}:`, state);
           updateConnectionIndicators(state);
           if (state === "disconnected" || state === "failed" || state === "closed") {
             // Clean up on disconnect
@@ -432,11 +448,11 @@ export default function SessionRoom() {
         console.log("Track readyState:", event.track.readyState);
         
         // For controllers, set the host's stream.
-        if (event.streams && event.streams[0]) {
+        if (myRole === "controller" && event.streams && event.streams[0]) {
           record.remoteStream = event.streams[0];
           console.log("Setting remote stream for controller from streams");
           setRemoteStream(event.streams[0]);
-        } else {
+        } else if (myRole === "controller") {
           // Fallback: create stream from track
           const stream = new MediaStream([event.track]);
           record.remoteStream = stream;
@@ -458,15 +474,15 @@ export default function SessionRoom() {
         const dc = pc.createDataChannel("control", { ordered: true });
         record.dc = dc;
         dc.onopen = () => {
-          console.log("Data channel opened (offerer)");
+          console.log("Data channel opened (offerer) with", remoteUserId);
         };
         dc.onclose = () => {
-          console.log("Data channel closed (offerer)");
+          console.log("Data channel closed (offerer) with", remoteUserId);
         };
         dc.onmessage = (e) => {
           try {
             const msg = JSON.parse(e.data) as ControlMessage;
-            handleDataMessage(msg);
+            handleDataMessage(msg, remoteUserId);
           } catch (err) {
             console.error("Failed to parse data channel message:", err);
           }
@@ -475,16 +491,17 @@ export default function SessionRoom() {
         pc.ondatachannel = (event) => {
           record.dc = event.channel;
           const dc = event.channel;
+          console.log("Data channel received (answerer) from", remoteUserId);
           dc.onopen = () => {
-            console.log("Data channel opened (answerer)");
+            console.log("Data channel opened (answerer) with", remoteUserId);
           };
           dc.onclose = () => {
-            console.log("Data channel closed (answerer)");
+            console.log("Data channel closed (answerer) with", remoteUserId);
           };
           dc.onmessage = (e) => {
             try {
               const msg = JSON.parse(e.data) as ControlMessage;
-              handleDataMessage(msg);
+              handleDataMessage(msg, remoteUserId);
             } catch (err) {
               console.error("Failed to parse data channel message:", err);
             }
@@ -660,6 +677,7 @@ export default function SessionRoom() {
   const startScreenShare = useCallback(async () => {
     setIsStartingShare(true);
     try {
+      console.log("Starting screen share...");
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { 
           frameRate: { ideal: 30, max: 60 },
@@ -679,7 +697,7 @@ export default function SessionRoom() {
       setTimeout(async () => {
         console.log("Renegotiating connections after screen share start");
         await renegotiateConnections();
-      }, 500); // Increased timeout to ensure tracks are properly added
+      }, 500);
 
       toast({
         title: "Screen sharing started",
@@ -715,6 +733,7 @@ export default function SessionRoom() {
   }, [addTracksToExistingConnections, renegotiateConnections, handleOffer, toast]);
 
   const stopScreenShare = useCallback(() => {
+    console.log("Stopping screen share...");
     const s = localStream;
     if (s) {
       s.getTracks().forEach((t) => t.stop());
@@ -742,17 +761,29 @@ export default function SessionRoom() {
   const sendDataTo = useCallback((remoteUserId: string, message: ControlMessage) => {
     const rec = connectionsRef.current.get(remoteUserId);
     if (rec?.dc && rec.dc.readyState === "open") {
+      console.log("Sending data message to", remoteUserId, ":", message.type);
       rec.dc.send(JSON.stringify(message));
       return true;
+    } else {
+      console.warn("Cannot send data to", remoteUserId, "- data channel not ready");
+      return false;
     }
-    return false;
   }, []);
 
   const sendData = useCallback(
     (message: ControlMessage) => {
-      if (!isControlEnabled) return;
+      if (!isControlEnabled) {
+        console.log("Control disabled, not sending message");
+        return;
+      }
+      
+      console.log("Sending control message:", message.type, "from", myRole);
+      
       if (myRole === "controller" && hostParticipant) {
-        sendDataTo(hostParticipant.userId, message);
+        const sent = sendDataTo(hostParticipant.userId, message);
+        if (!sent) {
+          console.warn("Failed to send control message to host");
+        }
       } else if (myRole === "host") {
         // Host may broadcast certain messages like clipboard to controllers.
         if (message.type === "clipboard") {
@@ -1077,48 +1108,97 @@ export default function SessionRoom() {
   }
 
   const HostView = () => (
-    <div className="h-full flex flex-col items-center justify-center bg-gray-800 text-white space-y-4 p-4">
-      <Monitor className="h-24 w-24" />
-      <h2 className="text-2xl font-bold text-center">
-        {localStream ? "You are sharing your screen" : "You are hosting this session"}
-      </h2>
-      {!localStream ? (
-        <Button onClick={startScreenShare} disabled={isStartingShare}>
-          {isStartingShare ? (
-            <>
-              <Play className="h-4 w-4 mr-2" />
-              Starting...
-            </>
-          ) : (
-            <>
-              <Play className="h-4 w-4 mr-2" />
-              Start screen sharing
-            </>
-          )}
-        </Button>
-      ) : (
-        <Button variant="destructive" onClick={stopScreenShare}>
-          <Square className="h-4 w-4 mr-2" />
-          Stop screen sharing
-        </Button>
-      )}
-      <p className="text-sm text-gray-300 text-center">
-        Controllers will connect automatically when you start sharing.
-      </p>
+    <div className="h-full flex flex-col items-center justify-center bg-gray-800 text-white space-y-6 p-8">
+      <div className="text-center space-y-4">
+        <div className="flex items-center justify-center mb-6">
+          <div className="relative">
+            <Monitor className="h-24 w-24 text-emerald-400" />
+            <div className="absolute -top-2 -right-2 bg-emerald-600 text-white text-xs px-2 py-1 rounded-full font-semibold">
+              HOST
+            </div>
+          </div>
+        </div>
+        
+        <h2 className="text-3xl font-bold text-center">
+          {localStream ? "You are sharing your screen" : "You are hosting this session"}
+        </h2>
+        
+        <div className="bg-gray-700/50 rounded-lg p-4 max-w-md mx-auto">
+          <p className="text-sm text-gray-300 mb-2">Session Code:</p>
+          <div className="font-mono text-2xl font-bold text-emerald-400 tracking-widest">
+            {currentSession.code}
+          </div>
+        </div>
+
+        {!localStream ? (
+          <div className="space-y-4">
+            <Button 
+              onClick={startScreenShare} 
+              disabled={isStartingShare}
+              className="bg-emerald-600 hover:bg-emerald-600/90 text-white px-8 py-3 text-lg"
+            >
+              {isStartingShare ? (
+                <>
+                  <Play className="h-5 w-5 mr-3 animate-pulse" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <Play className="h-5 w-5 mr-3" />
+                  Start screen sharing
+                </>
+              )}
+            </Button>
+            <p className="text-sm text-gray-300">
+              Controllers will connect automatically when you start sharing.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <Button 
+              variant="destructive" 
+              onClick={stopScreenShare}
+              className="px-8 py-3 text-lg"
+            >
+              <Square className="h-5 w-5 mr-3" />
+              Stop screen sharing
+            </Button>
+            <div className="text-center space-y-2">
+              <p className="text-emerald-400 font-semibold">
+                🟢 Your screen is being shared
+              </p>
+              <p className="text-sm text-gray-300">
+                Controllers can now view and control your screen
+              </p>
+            </div>
+          </div>
+        )}
+
+        {controlAdapterLabel && (
+          <div className="mt-6 p-3 bg-blue-600/20 border border-blue-500/30 rounded-lg">
+            <p className="text-sm text-blue-200">
+              Remote control: <span className="font-semibold">{controlAdapterLabel}</span>
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* Optional local preview */}
       {localStream && (
-        <video
-          autoPlay
-          muted
-          playsInline
-          className="mt-4 max-w-[80%] max-h-[60vh] rounded-lg border-2 border-gray-700 shadow-2xl"
-          ref={(el) => {
-            if (el && localStream) {
-              el.srcObject = localStream;
-            }
-          }}
-        />
+        <div className="mt-8 w-full max-w-2xl">
+          <p className="text-sm text-gray-400 mb-2 text-center">Preview:</p>
+          <video
+            autoPlay
+            muted
+            playsInline
+            className="w-full rounded-lg border-2 border-gray-600 shadow-xl"
+            ref={(el) => {
+              if (el && localStream) {
+                el.srcObject = localStream;
+              }
+            }}
+          />
+        </div>
       )}
     </div>
   );
@@ -1128,23 +1208,77 @@ export default function SessionRoom() {
     
     if (!remoteStream) {
       return (
-        <div className="h-full flex flex-col items-center justify-center bg-gray-800 text-white space-y-4">
-          <Monitor className="h-24 w-24 opacity-50" />
-          <h2 className="text-2xl font-bold">Waiting for host to share screen</h2>
-          <p className="text-sm text-gray-300">
-            The host needs to start screen sharing before you can view their screen.
-          </p>
+        <div className="h-full flex flex-col items-center justify-center bg-gray-800 text-white space-y-6 p-8">
+          <div className="text-center space-y-4">
+            <div className="flex items-center justify-center mb-6">
+              <div className="relative">
+                <Monitor className="h-24 w-24 text-blue-400 opacity-50" />
+                <div className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full font-semibold">
+                  CONTROLLER
+                </div>
+              </div>
+            </div>
+            
+            <h2 className="text-3xl font-bold">Waiting for host to share screen</h2>
+            
+            <div className="bg-gray-700/50 rounded-lg p-4 max-w-md mx-auto">
+              <p className="text-sm text-gray-300 mb-2">Session Code:</p>
+              <div className="font-mono text-2xl font-bold text-blue-400 tracking-widest">
+                {currentSession.code}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-center space-x-2">
+                <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+                <p className="text-yellow-400 font-semibold">Waiting for host...</p>
+              </div>
+              <p className="text-sm text-gray-300">
+                The host needs to start screen sharing before you can view their screen.
+              </p>
+            </div>
+
+            <div className="mt-6 p-4 bg-blue-600/10 border border-blue-500/20 rounded-lg">
+              <h3 className="font-semibold text-blue-200 mb-2">As a Controller, you can:</h3>
+              <ul className="text-sm text-blue-200 space-y-1 text-left">
+                <li>• View the host's screen in real-time</li>
+                <li>• Control the host's mouse and keyboard</li>
+                <li>• Send files to the host</li>
+                <li>• Sync clipboard content</li>
+                <li>• Chat with other participants</li>
+              </ul>
+            </div>
+          </div>
         </div>
       );
     }
     
     return (
-      <RemoteDisplay
-        remoteStream={remoteStream}
-        sendControlMessage={sendData}
-        isControlEnabled={isControlEnabled}
-        cursorName={controllerName}
-      />
+      <div className="h-full relative">
+        {/* Control status indicator */}
+        <div className="absolute top-4 left-4 z-10 flex items-center space-x-2">
+          <div className="bg-blue-600 text-white text-xs px-3 py-1 rounded-full font-semibold">
+            CONTROLLER
+          </div>
+          {isControlEnabled ? (
+            <div className="bg-green-600 text-white text-xs px-3 py-1 rounded-full font-semibold flex items-center">
+              <div className="w-2 h-2 bg-green-200 rounded-full mr-2 animate-pulse"></div>
+              CONTROL ACTIVE
+            </div>
+          ) : (
+            <div className="bg-gray-600 text-white text-xs px-3 py-1 rounded-full font-semibold">
+              CONTROL DISABLED
+            </div>
+          )}
+        </div>
+
+        <RemoteDisplay
+          remoteStream={remoteStream}
+          sendControlMessage={sendData}
+          isControlEnabled={isControlEnabled}
+          cursorName={controllerName}
+        />
+      </div>
     );
   };
 

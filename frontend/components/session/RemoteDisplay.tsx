@@ -20,6 +20,7 @@ export default function RemoteDisplay({
   const containerRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
   const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
+  const [showCursor, setShowCursor] = useState(false);
 
   useEffect(() => {
     if (videoRef.current && remoteStream) {
@@ -41,7 +42,11 @@ export default function RemoteDisplay({
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
 
+    // Update cursor position for visual feedback
     setCursorPosition({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    setShowCursor(true);
+
+    console.log(`Mouse ${e.type} at normalized coords: ${x.toFixed(3)}, ${y.toFixed(3)}`);
 
     switch (e.type) {
       case "mousemove":
@@ -59,12 +64,16 @@ export default function RemoteDisplay({
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     if (!isControlEnabled) return;
     e.preventDefault();
+    
+    console.log(`Scroll: deltaX=${e.deltaX}, deltaY=${e.deltaY}`);
     sendControlMessage({ type: "scroll", deltaX: e.deltaX, deltaY: e.deltaY });
   };
 
   const handleKeyEvent = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!isControlEnabled) return;
     e.preventDefault();
+    
+    console.log(`Key ${e.type}: ${e.key} (${e.code})`);
     sendControlMessage({ type: e.type as "keydown" | "keyup", key: e.key, code: e.code });
   };
 
@@ -74,18 +83,24 @@ export default function RemoteDisplay({
     }
   };
 
+  const handleMouseLeave = () => {
+    setShowCursor(false);
+  };
+
   return (
     <div
       ref={containerRef}
-      className="h-full w-full bg-black relative cursor-none"
+      className="h-full w-full bg-black relative overflow-hidden"
+      style={{ cursor: isControlEnabled ? 'none' : 'default' }}
       onMouseMove={handleMouseEvent}
       onMouseDown={handleMouseEvent}
       onMouseUp={handleMouseEvent}
+      onMouseLeave={handleMouseLeave}
       onWheel={handleWheel}
       onKeyDown={handleKeyEvent}
       onKeyUp={handleKeyEvent}
       onContextMenu={handleContextMenu}
-      tabIndex={0} // Make div focusable
+      tabIndex={0} // Make div focusable for keyboard events
     >
       <video
         ref={videoRef}
@@ -98,8 +113,20 @@ export default function RemoteDisplay({
         onCanPlay={() => console.log("Video can play")}
         onError={(e) => console.error("Video error:", e)}
       />
-      {isControlEnabled && (
+      
+      {/* Remote cursor visualization when control is enabled */}
+      {isControlEnabled && showCursor && (
         <RemoteCursor position={cursorPosition} name={cursorName} />
+      )}
+      
+      {/* Control status overlay */}
+      {!isControlEnabled && (
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+          <div className="bg-black/80 text-white px-6 py-3 rounded-lg backdrop-blur-sm">
+            <p className="text-lg font-semibold">Remote Control Disabled</p>
+            <p className="text-sm text-gray-300">Enable control from the toolbar to interact with the host's screen</p>
+          </div>
+        </div>
       )}
     </div>
   );
