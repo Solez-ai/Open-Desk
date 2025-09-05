@@ -1,9 +1,7 @@
 export interface ControlAdapter {
   name: string;
-  isConnected(): boolean;
   init(): Promise<boolean>;
   destroy(): void;
-
   onMouseMove(x: number, y: number): void;
   onMouseDown(x: number, y: number, button: number): void;
   onMouseUp(x: number, y: number, button: number): void;
@@ -14,153 +12,268 @@ export interface ControlAdapter {
 }
 
 /**
- * LocalAgentAdapter
- * Attempts to connect to a local native agent via WebSocket to perform real OS-level inputs.
- * If the agent is installed and running, this enables full remote control.
- * Default URL can be overridden by localStorage key "opendesk_agent_url".
+ * Browser-based control adapter that simulates remote control
+ * This is a fallback when native agent is not available
  */
-export class LocalAgentAdapter implements ControlAdapter {
-  name = "Native Agent";
-  private ws: WebSocket | null = null;
-  private connected = false;
-  private readonly url: string;
-
-  constructor() {
-    const override = typeof window !== "undefined" ? localStorage.getItem("opendesk_agent_url") : null;
-    this.url = override || "ws://127.0.0.1:9223/opendesk";
-  }
-
-  isConnected(): boolean {
-    return this.connected;
-    }
+export class BrowserEmulatedAdapter implements ControlAdapter {
+  name = "Browser Emulation";
+  private isInitialized = false;
+  private canvas: HTMLCanvasElement | null = null;
+  private ctx: CanvasRenderingContext2D | null = null;
+  private overlay: HTMLDivElement | null = null;
 
   async init(): Promise<boolean> {
     try {
-      await new Promise<void>((resolve, reject) => {
-        try {
-          this.ws = new WebSocket(this.url);
-        } catch (err) {
-          reject(err);
-          return;
-        }
+      // Create a hidden canvas for drawing cursor feedback
+      this.canvas = document.createElement('canvas');
+      this.canvas.style.position = 'fixed';
+      this.canvas.style.top = '0';
+      this.canvas.style.left = '0';
+      this.canvas.style.width = '100vw';
+      this.canvas.style.height = '100vh';
+      this.canvas.style.pointerEvents = 'none';
+      this.canvas.style.zIndex = '9999';
+      this.canvas.style.display = 'none';
+      
+      this.ctx = this.canvas.getContext('2d');
+      if (!this.ctx) {
+        throw new Error('Could not get canvas context');
+      }
 
-        const timer = setTimeout(() => {
-          try {
-            this.ws?.close();
-          } catch {}
-          this.ws = null;
-          reject(new Error("Agent connection timeout"));
-        }, 1500);
+      // Create overlay for visual feedback
+      this.overlay = document.createElement('div');
+      this.overlay.style.position = 'fixed';
+      this.overlay.style.top = '0';
+      this.overlay.style.left = '0';
+      this.overlay.style.width = '100vw';
+      this.overlay.style.height = '100vh';
+      this.overlay.style.pointerEvents = 'none';
+      this.overlay.style.zIndex = '9998';
+      this.overlay.style.display = 'none';
 
-        this.ws.onopen = () => {
-          clearTimeout(timer);
-          this.connected = true;
-          // Send handshake
-          this.send({ type: "hello", client: "opendesk-web" });
-          resolve();
-        };
-        this.ws.onerror = (e) => {
-          clearTimeout(timer);
-          reject(new Error("WebSocket error"));
-        };
-        this.ws.onclose = () => {
-          this.connected = false;
-        };
-      });
+      document.body.appendChild(this.canvas);
+      document.body.appendChild(this.overlay);
 
+      this.isInitialized = true;
+      console.log('Browser emulation adapter initialized');
       return true;
-    } catch {
-      this.connected = false;
+    } catch (error) {
+      console.error('Failed to initialize browser emulation adapter:', error);
       return false;
     }
   }
 
   destroy(): void {
-    try {
-      this.ws?.close();
-    } catch {}
-    this.ws = null;
-    this.connected = false;
+    if (this.canvas && this.canvas.parentNode) {
+      this.canvas.parentNode.removeChild(this.canvas);
+    }
+    if (this.overlay && this.overlay.parentNode) {
+      this.overlay.parentNode.removeChild(this.overlay);
+    }
+    this.canvas = null;
+    this.ctx = null;
+    this.overlay = null;
+    this.isInitialized = false;
   }
 
-  private send(msg: Record<string, unknown>) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    try {
-      this.ws.send(JSON.stringify(msg));
-    } catch (err) {
-      // ignore
-    }
+  private showVisualFeedback(x: number, y: number, action: string): void {
+    if (!this.canvas || !this.ctx || !this.overlay) return;
+
+    // Convert normalized coordinates to screen coordinates
+    const screenX = x * window.innerWidth;
+    const screenY = y * window.innerHeight;
+
+    // Show canvas
+    this.canvas.style.display = 'block';
+    this.overlay.style.display = 'block';
+
+    // Clear canvas
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.canvas.width = window.innerWidth;
+    this.canvas.height = window.innerHeight;
+
+    // Draw cursor
+    this.ctx.fillStyle = 'red';
+    this.ctx.beginPath();
+    this.ctx.arc(screenX, screenY, 8, 0, 2 * Math.PI);
+    this.ctx.fill();
+
+    // Draw action indicator
+    this.ctx.fillStyle = 'white';
+    this.ctx.font = '14px Arial';
+    this.ctx.fillText(action, screenX + 15, screenY - 15);
+
+    // Hide after a short delay
+    setTimeout(() => {
+      if (this.canvas) this.canvas.style.display = 'none';
+      if (this.overlay) this.overlay.style.display = 'none';
+    }, 1000);
   }
 
   onMouseMove(x: number, y: number): void {
-    this.send({ type: "mousemove", x, y });
+    if (!this.isInitialized) return;
+    console.log(`Mouse move: ${x}, ${y}`);
+    this.showVisualFeedback(x, y, 'Move');
   }
+
   onMouseDown(x: number, y: number, button: number): void {
-    this.send({ type: "mousedown", x, y, button });
+    if (!this.isInitialized) return;
+    const buttonName = button === 0 ? 'Left' : button === 1 ? 'Middle' : 'Right';
+    console.log(`Mouse down: ${buttonName} at ${x}, ${y}`);
+    this.showVisualFeedback(x, y, `${buttonName} Down`);
   }
+
   onMouseUp(x: number, y: number, button: number): void {
-    this.send({ type: "mouseup", x, y, button });
+    if (!this.isInitialized) return;
+    const buttonName = button === 0 ? 'Left' : button === 1 ? 'Middle' : 'Right';
+    console.log(`Mouse up: ${buttonName} at ${x}, ${y}`);
+    this.showVisualFeedback(x, y, `${buttonName} Up`);
   }
+
   onScroll(deltaX: number, deltaY: number): void {
-    this.send({ type: "scroll", deltaX, deltaY });
+    if (!this.isInitialized) return;
+    console.log(`Scroll: ${deltaX}, ${deltaY}`);
+    // Show scroll indicator in center of screen
+    this.showVisualFeedback(0.5, 0.5, `Scroll: ${deltaY > 0 ? 'Down' : 'Up'}`);
   }
+
   onKeyDown(key: string, code: string): void {
-    this.send({ type: "keydown", key, code });
+    if (!this.isInitialized) return;
+    console.log(`Key down: ${key} (${code})`);
+    // Show key indicator in center of screen
+    this.showVisualFeedback(0.5, 0.5, `Key: ${key}`);
   }
+
   onKeyUp(key: string, code: string): void {
-    this.send({ type: "keyup", key, code });
+    if (!this.isInitialized) return;
+    console.log(`Key up: ${key} (${code})`);
   }
+
   async onClipboard(content: string): Promise<void> {
-    this.send({ type: "clipboard", content });
+    if (!this.isInitialized) return;
+    console.log(`Clipboard: ${content.substring(0, 50)}...`);
+    // Show clipboard indicator
+    this.showVisualFeedback(0.5, 0.5, 'Clipboard');
   }
 }
 
 /**
- * BrowserEmulatedAdapter
- * Fallback for when the native agent is not available.
- * It cannot control the OS; it only serves as a stub so the session remains usable.
+ * Native agent adapter for actual remote control
+ * This would interface with a native application for real control
  */
-export class BrowserEmulatedAdapter implements ControlAdapter {
-  name = "Browser Emulation (Limited)";
-  private connected = false;
-
-  isConnected(): boolean {
-    return this.connected;
-  }
+export class LocalAgentAdapter implements ControlAdapter {
+  name = "Native Agent";
+  private isInitialized = false;
+  private agentWindow: Window | null = null;
+  private messageHandler: ((event: MessageEvent) => void) | null = null;
 
   async init(): Promise<boolean> {
-    this.connected = true;
-    return true;
+    try {
+      // Check if native agent is available
+      // In a real implementation, this would check for a native app
+      const agentAvailable = await this.checkNativeAgent();
+      
+      if (!agentAvailable) {
+        console.log('Native agent not available');
+        return false;
+      }
+
+      // Set up communication with native agent
+      this.setupAgentCommunication();
+      
+      this.isInitialized = true;
+      console.log('Native agent adapter initialized');
+      return true;
+    } catch (error) {
+      console.error('Failed to initialize native agent adapter:', error);
+      return false;
+    }
+  }
+
+  private async checkNativeAgent(): Promise<boolean> {
+    // In a real implementation, this would check for a native app
+    // For now, we'll simulate by checking for a specific window or service
+    try {
+      // Try to communicate with native agent via postMessage or other mechanism
+      // This is a placeholder - real implementation would use proper IPC
+      return false; // For now, always return false to use browser emulation
+    } catch {
+      return false;
+    }
+  }
+
+  private setupAgentCommunication(): void {
+    // Set up message handling for communication with native agent
+    this.messageHandler = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      
+      const { type, data } = event.data;
+      if (type === 'agent-response') {
+        console.log('Agent response:', data);
+      }
+    };
+
+    window.addEventListener('message', this.messageHandler);
   }
 
   destroy(): void {
-    this.connected = false;
+    if (this.messageHandler) {
+      window.removeEventListener('message', this.messageHandler);
+      this.messageHandler = null;
+    }
+    this.agentWindow = null;
+    this.isInitialized = false;
   }
 
-  onMouseMove(_x: number, _y: number): void {
-    // No-op: cannot control OS via browser alone
-  }
-  onMouseDown(_x: number, _y: number, _button: number): void {
-    // No-op
-  }
-  onMouseUp(_x: number, _y: number, _button: number): void {
-    // No-op
-  }
-  onScroll(_dx: number, _dy: number): void {
-    // No-op
-  }
-  onKeyDown(_key: string, _code: string): void {
-    // No-op
-  }
-  onKeyUp(_key: string, _code: string): void {
-    // No-op
-  }
-  async onClipboard(content: string): Promise<void> {
-    // Best-effort: try to write to browser clipboard
-    try {
-      await navigator.clipboard.writeText(content);
-    } catch {
-      // ignore
+  private sendToAgent(command: string, data: any): void {
+    if (!this.isInitialized) return;
+    
+    // Send command to native agent
+    // In a real implementation, this would use proper IPC
+    console.log(`Sending to agent: ${command}`, data);
+    
+    // Simulate agent communication
+    if (this.agentWindow) {
+      this.agentWindow.postMessage({
+        type: 'agent-command',
+        command,
+        data
+      }, '*');
     }
+  }
+
+  onMouseMove(x: number, y: number): void {
+    if (!this.isInitialized) return;
+    this.sendToAgent('mouse-move', { x, y });
+  }
+
+  onMouseDown(x: number, y: number, button: number): void {
+    if (!this.isInitialized) return;
+    this.sendToAgent('mouse-down', { x, y, button });
+  }
+
+  onMouseUp(x: number, y: number, button: number): void {
+    if (!this.isInitialized) return;
+    this.sendToAgent('mouse-up', { x, y, button });
+  }
+
+  onScroll(deltaX: number, deltaY: number): void {
+    if (!this.isInitialized) return;
+    this.sendToAgent('scroll', { deltaX, deltaY });
+  }
+
+  onKeyDown(key: string, code: string): void {
+    if (!this.isInitialized) return;
+    this.sendToAgent('key-down', { key, code });
+  }
+
+  onKeyUp(key: string, code: string): void {
+    if (!this.isInitialized) return;
+    this.sendToAgent('key-up', { key, code });
+  }
+
+  async onClipboard(content: string): Promise<void> {
+    if (!this.isInitialized) return;
+    this.sendToAgent('clipboard', { content });
   }
 }

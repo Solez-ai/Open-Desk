@@ -1,224 +1,299 @@
-export interface ICEConfiguration {
+export interface ICEConfig {
   iceServers: RTCIceServer[];
+  iceCandidatePoolSize?: number;
   iceTransportPolicy?: RTCIceTransportPolicy;
   bundlePolicy?: RTCBundlePolicy;
   rtcpMuxPolicy?: RTCRtcpMuxPolicy;
-  iceCandidatePoolSize?: number;
 }
 
-export interface OptimizedICEConfig extends ICEConfiguration {
-  gatheringTimeout: number;
-  candidatePairTimeout: number;
+export interface NetworkInfo {
+  type: 'wifi' | 'cellular' | 'ethernet' | 'unknown';
+  effectiveType: 'slow-2g' | '2g' | '3g' | '4g' | 'unknown';
+  downlink: number;
+  rtt: number;
 }
 
 export class ICEOptimizer {
-  private static readonly DEFAULT_ICE_SERVERS: RTCIceServer[] = [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    { urls: "stun:stun2.l.google.com:19302" },
-    { urls: "stun:stun3.l.google.com:19302" },
-    { urls: "stun:stun4.l.google.com:19302" },
-  ];
+  private static instance: ICEOptimizer;
+  private networkInfo: NetworkInfo | null = null;
+  private iceServers: RTCIceServer[] = [];
 
-  private static readonly REGIONAL_ICE_SERVERS = {
-    global: [
-      { urls: "stun:stun.l.google.com:19302" },
-      { urls: "stun:stun1.l.google.com:19302" },
-    ],
-    na: [ // North America
-      { urls: "stun:stun.l.google.com:19302" },
-      { urls: "stun:global.stun.twilio.com:3478" },
-    ],
-    eu: [ // Europe
-      { urls: "stun:stun.l.google.com:19302" },
-      { urls: "stun:stun.cloudflare.com:3478" },
-    ],
-    ap: [ // Asia Pacific
-      { urls: "stun:stun.l.google.com:19302" },
-      { urls: "stun:stun.qq.com:3478" },
-    ],
-  };
-
-  static async getOptimizedConfig(
-    customServers?: RTCIceServer[]
-  ): Promise<OptimizedICEConfig> {
-    const region = await this.detectRegion();
-    const regionalServers = this.REGIONAL_ICE_SERVERS[region] || this.REGIONAL_ICE_SERVERS.global;
-    
-    const iceServers = customServers || [...regionalServers, ...this.DEFAULT_ICE_SERVERS];
-    
-    // Remove duplicates
-    const uniqueServers = this.deduplicateServers(iceServers);
-
-    return {
-      iceServers: uniqueServers,
-      iceTransportPolicy: "all",
-      bundlePolicy: "max-bundle",
-      rtcpMuxPolicy: "require",
-      iceCandidatePoolSize: 10, // Pre-gather candidates
-      gatheringTimeout: 5000, // 5 seconds
-      candidatePairTimeout: 10000, // 10 seconds
-    };
+  private constructor() {
+    this.initializeNetworkDetection();
+    this.initializeICEServers();
   }
 
-  private static async detectRegion(): Promise<keyof typeof ICEOptimizer.REGIONAL_ICE_SERVERS> {
+  static getInstance(): ICEOptimizer {
+    if (!ICEOptimizer.instance) {
+      ICEOptimizer.instance = new ICEOptimizer();
+    }
+    return ICEOptimizer.instance;
+  }
+
+  private async initializeNetworkDetection(): Promise<void> {
     try {
-      // Try to detect region based on timezone and language
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const language = navigator.language;
+      // Use Network Information API if available
+      if ('connection' in navigator) {
+        const connection = (navigator as any).connection;
+        this.networkInfo = {
+          type: connection.type || 'unknown',
+          effectiveType: connection.effectiveType || 'unknown',
+          downlink: connection.downlink || 0,
+          rtt: connection.rtt || 0,
+        };
 
-      if (timezone.includes("America") || language.startsWith("en-US")) {
-        return "na";
-      } else if (timezone.includes("Europe") || language.startsWith("en-GB") || 
-                 language.startsWith("de") || language.startsWith("fr")) {
-        return "eu";
-      } else if (timezone.includes("Asia") || timezone.includes("Pacific") ||
-                 language.startsWith("zh") || language.startsWith("ja") || language.startsWith("ko")) {
-        return "ap";
+        // Listen for network changes
+        connection.addEventListener('change', () => {
+          this.networkInfo = {
+            type: connection.type || 'unknown',
+            effectiveType: connection.effectiveType || 'unknown',
+            downlink: connection.downlink || 0,
+            rtt: connection.rtt || 0,
+          };
+        });
       }
-
-      return "global";
-    } catch {
-      return "global";
+    } catch (error) {
+      console.warn('Network detection not available:', error);
     }
   }
 
-  private static deduplicateServers(servers: RTCIceServer[]): RTCIceServer[] {
-    const seen = new Set<string>();
-    return servers.filter(server => {
-      const key = Array.isArray(server.urls) ? server.urls.join(",") : server.urls;
-      if (seen.has(key)) {
-        return false;
-      }
-      seen.add(key);
-      return true;
-    });
+  private async initializeICEServers(): Promise<void> {
+    // Default ICE servers - in production, these should be your own STUN/TURN servers
+    this.iceServers = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+    ];
+
+    // Add TURN servers if available (you should replace these with your own)
+    const turnServers = [
+      // Example TURN servers - replace with your own
+      // { urls: 'turn:your-turn-server.com:3478', username: 'user', credential: 'pass' },
+    ];
+
+    this.iceServers.push(...turnServers);
+  }
+
+  async getOptimizedConfig(): Promise<ICEConfig> {
+    const config: ICEConfig = {
+      iceServers: this.iceServers,
+      iceCandidatePoolSize: this.getOptimalCandidatePoolSize(),
+      iceTransportPolicy: this.getOptimalTransportPolicy(),
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require',
+    };
+
+    return config;
+  }
+
+  private getOptimalCandidatePoolSize(): number {
+    if (!this.networkInfo) return 10;
+
+    // Adjust candidate pool size based on network conditions
+    switch (this.networkInfo.effectiveType) {
+      case 'slow-2g':
+      case '2g':
+        return 5; // Fewer candidates for slow networks
+      case '3g':
+        return 10;
+      case '4g':
+        return 15;
+      default:
+        return 10;
+    }
+  }
+
+  private getOptimalTransportPolicy(): RTCIceTransportPolicy {
+    if (!this.networkInfo) return 'all';
+
+    // Use relay only for very poor networks to save bandwidth
+    if (this.networkInfo.effectiveType === 'slow-2g' || this.networkInfo.rtt > 1000) {
+      return 'relay';
+    }
+
+    return 'all';
   }
 
   static createOptimizedPeerConnection(
-    config: OptimizedICEConfig,
-    onIceCandidate?: (candidate: RTCIceCandidate | null) => void,
-    onConnectionStateChange?: (state: RTCPeerConnectionState) => void
+    config: ICEConfig,
+    onIceCandidate: (candidate: RTCIceCandidate | null) => void,
+    onConnectionStateChange: (state: RTCPeerConnectionState) => void
   ): RTCPeerConnection {
-    const pc = new RTCPeerConnection({
-      iceServers: config.iceServers,
-      iceTransportPolicy: config.iceTransportPolicy,
-      bundlePolicy: config.bundlePolicy,
-      rtcpMuxPolicy: config.rtcpMuxPolicy,
-      iceCandidatePoolSize: config.iceCandidatePoolSize,
-    });
+    const pc = new RTCPeerConnection(config);
 
-    // Optimize ICE gathering
-    let gatheringTimer: number | null = null;
-    let gatheringComplete = false;
-
+    // Set up ICE candidate handling
     pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        onIceCandidate?.(event.candidate);
-      } else {
-        // End of candidates
-        gatheringComplete = true;
-        if (gatheringTimer) {
-          clearTimeout(gatheringTimer);
-          gatheringTimer = null;
-        }
-      }
+      onIceCandidate(event.candidate);
     };
 
-    pc.onicegatheringstatechange = () => {
-      if (pc.iceGatheringState === "gathering" && !gatheringTimer) {
-        // Set a timeout for gathering
-        gatheringTimer = window.setTimeout(() => {
-          if (!gatheringComplete) {
-            console.warn("ICE gathering timeout reached, proceeding with available candidates");
-            onIceCandidate?.(null); // Signal end of candidates
-          }
-        }, config.gatheringTimeout);
-      }
-    };
-
+    // Set up connection state monitoring
     pc.onconnectionstatechange = () => {
-      onConnectionStateChange?.(pc.connectionState);
+      onConnectionStateChange(pc.connectionState);
     };
 
-    // Enable aggressive ICE nomination
+    // Set up ICE connection state monitoring
     pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === "checking") {
-        // Connection is attempting to establish, this is normal
-        console.log("ICE connection checking...");
-      }
+      console.log('ICE connection state:', pc.iceConnectionState);
+    };
+
+    // Set up ICE gathering state monitoring
+    pc.onicegatheringstatechange = () => {
+      console.log('ICE gathering state:', pc.iceGatheringState);
     };
 
     return pc;
   }
 
-  static async testICEServer(server: RTCIceServer): Promise<boolean> {
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        pc.close();
-        resolve(false);
-      }, 3000);
-
-      const pc = new RTCPeerConnection({
-        iceServers: [server],
-        iceCandidatePoolSize: 1,
-      });
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          clearTimeout(timeout);
-          pc.close();
-          resolve(true);
+  static enableAggressiveICE(pc: RTCPeerConnection): void {
+    // Configure aggressive ICE gathering for faster connection
+    const transceivers = pc.getTransceivers();
+    
+    transceivers.forEach(transceiver => {
+      if (transceiver.sender && transceiver.sender.track) {
+        const params = transceiver.sender.getParameters();
+        if (params.encodings && params.encodings.length > 0) {
+          // Enable simulcast for better quality adaptation
+          params.encodings[0].rid = 'high';
+          if (params.encodings.length === 1) {
+            params.encodings.push({
+              rid: 'medium',
+              scaleResolutionDownBy: 2,
+              maxBitrate: 1000000,
+            });
+            params.encodings.push({
+              rid: 'low',
+              scaleResolutionDownBy: 4,
+              maxBitrate: 300000,
+            });
+          }
+          transceiver.sender.setParameters(params);
         }
-      };
-
-      pc.onicegatheringstatechange = () => {
-        if (pc.iceGatheringState === "complete") {
-          clearTimeout(timeout);
-          pc.close();
-          resolve(false);
-        }
-      };
-
-      // Create a dummy data channel to trigger ICE gathering
-      pc.createDataChannel("test");
-      pc.createOffer().then(offer => pc.setLocalDescription(offer));
+      }
     });
   }
 
-  static async filterWorkingServers(servers: RTCIceServer[]): Promise<RTCIceServer[]> {
-    const workingServers: RTCIceServer[] = [];
-    
-    // Test servers in parallel, but limit concurrency
-    const batchSize = 3;
-    for (let i = 0; i < servers.length; i += batchSize) {
-      const batch = servers.slice(i, i + batchSize);
-      const results = await Promise.allSettled(
-        batch.map(server => this.testICEServer(server))
-      );
-      
-      results.forEach((result, index) => {
-        if (result.status === "fulfilled" && result.value) {
-          workingServers.push(batch[index]);
-        }
-      });
-    }
+  static async optimizeForNetwork(pc: RTCPeerConnection): Promise<void> {
+    const optimizer = ICEOptimizer.getInstance();
+    const networkInfo = optimizer.networkInfo;
 
-    return workingServers.length > 0 ? workingServers : servers; // Fallback to all if none work
+    if (!networkInfo) return;
+
+    // Adjust bitrate based on network conditions
+    const senders = pc.getSenders();
+    
+    for (const sender of senders) {
+      if (!sender.track) continue;
+
+      const params = sender.getParameters();
+      if (!params.encodings || params.encodings.length === 0) {
+        params.encodings = [{}];
+      }
+
+      // Adjust encoding parameters based on network
+      if (sender.track.kind === 'video') {
+        const encoding = params.encodings[0];
+        
+        switch (networkInfo.effectiveType) {
+          case 'slow-2g':
+            encoding.maxBitrate = 200000; // 200 kbps
+            encoding.maxFramerate = 15;
+            encoding.scaleResolutionDownBy = 4;
+            break;
+          case '2g':
+            encoding.maxBitrate = 500000; // 500 kbps
+            encoding.maxFramerate = 20;
+            encoding.scaleResolutionDownBy = 3;
+            break;
+          case '3g':
+            encoding.maxBitrate = 1000000; // 1 Mbps
+            encoding.maxFramerate = 25;
+            encoding.scaleResolutionDownBy = 2;
+            break;
+          case '4g':
+            encoding.maxBitrate = 2500000; // 2.5 Mbps
+            encoding.maxFramerate = 30;
+            encoding.scaleResolutionDownBy = 1.5;
+            break;
+          default:
+            encoding.maxBitrate = 4000000; // 4 Mbps
+            encoding.maxFramerate = 60;
+            encoding.scaleResolutionDownBy = 1;
+        }
+
+        await sender.setParameters(params);
+      }
+    }
   }
 
-  static enableAggressiveICE(pc: RTCPeerConnection): void {
-    // Enable aggressive ICE nomination for faster connection
-    const originalSetLocalDescription = pc.setLocalDescription.bind(pc);
-    pc.setLocalDescription = function(description: RTCSessionDescriptionInit) {
-      if (description.sdp) {
-        // Modify SDP to be more aggressive
-        description.sdp = description.sdp.replace(
-          /a=ice-options:trickle/g,
-          "a=ice-options:trickle,aggressive"
-        );
-      }
-      return originalSetLocalDescription(description);
+  static async getNetworkQuality(): Promise<'excellent' | 'good' | 'fair' | 'poor'> {
+    const optimizer = ICEOptimizer.getInstance();
+    const networkInfo = optimizer.networkInfo;
+
+    if (!networkInfo) return 'good';
+
+    // Determine quality based on network metrics
+    if (networkInfo.effectiveType === '4g' && networkInfo.rtt < 100) {
+      return 'excellent';
+    } else if (networkInfo.effectiveType === '4g' && networkInfo.rtt < 200) {
+      return 'good';
+    } else if (networkInfo.effectiveType === '3g' || (networkInfo.effectiveType === '4g' && networkInfo.rtt < 500)) {
+      return 'fair';
+    } else {
+      return 'poor';
+    }
+  }
+
+  static async testConnectivity(): Promise<{
+    stun: boolean;
+    turn: boolean;
+    latency: number;
+  }> {
+    const results = {
+      stun: false,
+      turn: false,
+      latency: 0,
     };
+
+    try {
+      // Test STUN connectivity
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+
+      const startTime = Date.now();
+      
+      return new Promise((resolve) => {
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            results.stun = true;
+            results.latency = Date.now() - startTime;
+            pc.close();
+            resolve(results);
+          }
+        };
+
+        pc.createDataChannel('test');
+        pc.createOffer().then(offer => pc.setLocalDescription(offer));
+
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          pc.close();
+          resolve(results);
+        }, 5000);
+      });
+    } catch (error) {
+      console.error('Connectivity test failed:', error);
+      return results;
+    }
+  }
+
+  getNetworkInfo(): NetworkInfo | null {
+    return this.networkInfo;
+  }
+
+  getICEServers(): RTCIceServer[] {
+    return [...this.iceServers];
   }
 }

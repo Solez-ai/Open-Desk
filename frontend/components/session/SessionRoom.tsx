@@ -361,7 +361,8 @@ export default function SessionRoom() {
       if (existing) return existing;
 
       // Get optimized ICE configuration
-      const iceConfig = await ICEOptimizer.getOptimizedConfig();
+      const optimizer = ICEOptimizer.getInstance();
+      const iceConfig = await optimizer.getOptimizedConfig();
       
       const pc = ICEOptimizer.createOptimizedPeerConnection(
         iceConfig,
