@@ -87,6 +87,13 @@ export default function RemoteDisplay({
     setShowCursor(false);
   };
 
+  // Focus the container when control is enabled to capture keyboard events
+  useEffect(() => {
+    if (isControlEnabled && containerRef.current) {
+      containerRef.current.focus();
+    }
+  }, [isControlEnabled]);
+
   return (
     <div
       ref={containerRef}
