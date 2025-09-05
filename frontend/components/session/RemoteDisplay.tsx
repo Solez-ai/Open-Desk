@@ -23,14 +23,7 @@ export default function RemoteDisplay({
 
   useEffect(() => {
     if (videoRef.current && remoteStream) {
-      console.log("Setting video srcObject:", remoteStream);
-      console.log("Video tracks:", remoteStream.getTracks().map(t => `${t.kind}:${t.id}`));
       videoRef.current.srcObject = remoteStream;
-      
-      // Force play
-      videoRef.current.play().catch(err => {
-        console.error("Video play failed:", err);
-      });
     }
   }, [remoteStream]);
 
@@ -91,12 +84,7 @@ export default function RemoteDisplay({
         ref={videoRef}
         autoPlay
         playsInline
-        muted={false}
-        data-remote="true"
         className="w-full h-full object-contain"
-        onLoadedMetadata={() => console.log("Video metadata loaded")}
-        onCanPlay={() => console.log("Video can play")}
-        onError={(e) => console.error("Video error:", e)}
       />
       {isControlEnabled && (
         <RemoteCursor position={cursorPosition} name={cursorName} />

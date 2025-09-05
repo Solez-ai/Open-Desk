@@ -16,7 +16,6 @@ import LoadingSpinner from "../ui/LoadingSpinner";
 import TransfersPanel, { type ReceivedFile } from "./TransfersPanel";
 import QualityMonitor from "./QualityMonitor";
 import QualityControl from "./QualityControl";
-import WebRTCDebug from "./WebRTCDebug";
 import type { ControlMessage, SignalPayload, FileMetaMessage, FileChunkMessage, FileCompleteMessage } from "../../webrtc/types";
 import type { Session as SessionData, Participant } from "~backend/session/types";
 import { ICE_SERVERS } from "../../config";
@@ -192,26 +191,18 @@ export default function SessionRoom() {
         await fallback.init();
         controlAdapterRef.current = fallback;
         setControlAdapterLabel(`${fallback.name}`);
-        // Only show toast in development mode
-        if (import.meta.env.DEV) {
-          toast({
-            title: "Using browser emulation",
-            description: "Remote control will show visual feedback. Native agent not available.",
-            duration: 3000,
-          });
-        }
+        toast({
+          title: "Native agent not found",
+          description: "Using browser emulation (limited control). Install/launch the host agent for full control.",
+        });
       } else {
         if (destroyed) return;
         controlAdapterRef.current = native;
         setControlAdapterLabel(`${native.name}`);
-        // Only show toast in development mode
-        if (import.meta.env.DEV) {
-          toast({
-            title: "Native agent connected",
-            description: "Full remote control enabled.",
-            duration: 3000,
-          });
-        }
+        toast({
+          title: "Native agent connected",
+          description: "Full remote control enabled.",
+        });
       }
     }
     setupAdapter();
@@ -428,13 +419,11 @@ export default function SessionRoom() {
 
       pc.ontrack = (event) => {
         console.log("Received track:", event.track.kind, "from", remoteUserId);
-        console.log("Track streams:", event.streams);
-        console.log("Track readyState:", event.track.readyState);
         
         // For controllers, set the host's stream.
         if (event.streams && event.streams[0]) {
           record.remoteStream = event.streams[0];
-          console.log("Setting remote stream for controller from streams");
+          console.log("Setting remote stream for controller");
           setRemoteStream(event.streams[0]);
         } else {
           // Fallback: create stream from track
@@ -443,15 +432,6 @@ export default function SessionRoom() {
           console.log("Creating new stream from track for controller");
           setRemoteStream(stream);
         }
-        
-        // Force video element update
-        setTimeout(() => {
-          const videoElement = document.querySelector('video[data-remote="true"]') as HTMLVideoElement;
-          if (videoElement && record.remoteStream) {
-            videoElement.srcObject = record.remoteStream;
-            console.log("Forced video element update");
-          }
-        }, 100);
       };
 
       if (asOfferer) {
@@ -496,7 +476,6 @@ export default function SessionRoom() {
       if (myRole === "host" && localStream) {
         console.log("Attaching existing local stream tracks to new peer connection");
         localStream.getTracks().forEach((track) => {
-          console.log(`Adding track: ${track.kind} (${track.id})`);
           pc.addTrack(track, localStream);
         });
       }
@@ -511,15 +490,6 @@ export default function SessionRoom() {
       console.log("Creating offer to:", remoteUserId);
       const rec = await ensurePeerConnection(remoteUserId, true);
       try {
-        // For host, ensure tracks are added before creating offer
-        if (myRole === "host" && localStream) {
-          console.log("Host: Adding tracks before creating offer");
-          localStream.getTracks().forEach((track) => {
-            console.log(`Adding track to offer: ${track.kind} (${track.id})`);
-            rec.pc.addTrack(track, localStream);
-          });
-        }
-        
         const offer = await rec.pc.createOffer();
         await rec.pc.setLocalDescription(offer);
         await publishSignal("offer", offer, remoteUserId);
@@ -533,7 +503,7 @@ export default function SessionRoom() {
         });
       }
     },
-    [ensurePeerConnection, publishSignal, toast, myRole, localStream]
+    [ensurePeerConnection, publishSignal, toast]
   );
 
   const handleOffer = useCallback(
@@ -626,21 +596,9 @@ export default function SessionRoom() {
   const renegotiateConnections = useCallback(async () => {
     console.log("Renegotiating all connections");
     const promises = Array.from(connectionsRef.current.entries()).map(async ([userId, record]) => {
-      console.log(`Checking connection with ${userId}: signaling state = ${record.pc.signalingState}`);
-      
       if (record.pc.signalingState === "stable") {
         try {
           console.log("Creating new offer for:", userId);
-          
-          // Ensure tracks are added before creating offer
-          if (myRole === "host" && localStream) {
-            console.log("Adding tracks before renegotiation offer");
-            localStream.getTracks().forEach((track) => {
-              console.log(`Adding track to renegotiation: ${track.kind} (${track.id})`);
-              record.pc.addTrack(track, localStream);
-            });
-          }
-          
           const offer = await record.pc.createOffer();
           await record.pc.setLocalDescription(offer);
           await publishSignal("offer", offer, userId);
@@ -654,7 +612,7 @@ export default function SessionRoom() {
     });
     
     await Promise.all(promises);
-  }, [publishSignal, myRole, localStream]);
+  }, [publishSignal]);
 
   // Start/stop screen sharing (host)
   const startScreenShare = useCallback(async () => {
@@ -677,9 +635,8 @@ export default function SessionRoom() {
 
       // Wait a bit for tracks to be added, then renegotiate
       setTimeout(async () => {
-        console.log("Renegotiating connections after screen share start");
         await renegotiateConnections();
-      }, 500); // Increased timeout to ensure tracks are properly added
+      }, 100);
 
       toast({
         title: "Screen sharing started",
@@ -1203,14 +1160,6 @@ export default function SessionRoom() {
           </div>
         )}
       </div>
-      
-      {/* WebRTC Debug Component */}
-      <WebRTCDebug
-        connections={connectionsRef.current}
-        localStream={localStream}
-        remoteStream={remoteStream}
-        myRole={myRole}
-      />
     </div>
   );
 }
