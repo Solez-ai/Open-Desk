@@ -194,6 +194,13 @@ export class LocalAgentAdapter implements ControlAdapter {
     // In a real implementation, this would check for a native app
     // For now, we'll simulate by checking for a specific window or service
     try {
+      // Check if we're in a development environment or if native agent is available
+      // For now, we'll return true in development to avoid the popup
+      if (import.meta.env.DEV) {
+        console.log('Development mode: Simulating native agent availability');
+        return true;
+      }
+      
       // Try to communicate with native agent via postMessage or other mechanism
       // This is a placeholder - real implementation would use proper IPC
       return false; // For now, always return false to use browser emulation
