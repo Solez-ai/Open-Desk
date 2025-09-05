@@ -50,14 +50,22 @@ export default function CreateSessionDialog({
         description: `Session ${result.session.code} has been created.`,
       });
 
-      onSuccess();
+      // Close dialog first
       onOpenChange(false);
-      navigate(`/session/${result.session.id}`);
-
+      
       // Reset form
       setName("");
       setAllowClipboard(false);
       setIsPublic(false);
+      
+      // Refresh the session list
+      onSuccess();
+      
+      // Navigate after a short delay to ensure the session is available
+      setTimeout(() => {
+        navigate(`/session/${result.session.id}`);
+      }, 100);
+
     } catch (error) {
       console.error("Failed to create session:", error);
       toast({

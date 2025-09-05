@@ -157,12 +157,25 @@ export default function SessionRoom() {
   } = useQuery({
     queryKey: ["session", sessionId],
     enabled: !!sessionId,
+    retry: 3,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
     queryFn: async () => {
-      const [sess, parts] = await Promise.all([
-        backend.session.getSession({ sessionId: sessionId! }),
-        backend.session.listParticipants({ sessionId: sessionId! }),
-      ]);
-      return { session: sess.session, participants: parts.participants };
+      if (!sessionId) {
+        throw new Error("Session ID is required");
+      }
+      
+      try {
+        console.log("Fetching session details for:", sessionId);
+        const [sess, parts] = await Promise.all([
+          backend.session.getSession({ sessionId }),
+          backend.session.listParticipants({ sessionId }),
+        ]);
+        console.log("Session fetched successfully:", sess.session);
+        return { session: sess.session, participants: parts.participants };
+      } catch (error) {
+        console.error("Failed to fetch session:", error);
+        throw error;
+      }
     },
   });
 
@@ -1087,10 +1100,20 @@ export default function SessionRoom() {
       </div>
     );
   }
+  
   if (sessionError || !currentSession) {
+    console.error("Session error:", sessionError);
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p>Session not found.</p>
+      <div className="min-h-screen flex flex-col items-center justify-center p-8">
+        <div className="text-center space-y-4">
+          <h1 className="text-2xl font-bold text-destructive">Session Not Found</h1>
+          <p className="text-muted-foreground">
+            The session you're looking for doesn't exist or you don't have permission to access it.
+          </p>
+          <Button onClick={() => navigate("/dashboard")} className="mt-4">
+            Return to Dashboard
+          </Button>
+        </div>
       </div>
     );
   }
