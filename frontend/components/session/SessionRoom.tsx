@@ -118,9 +118,9 @@ export default function SessionRoom() {
     userId: row.user_id,
     role: row.role,
     status: row.status,
-    username: row.profiles?.username,
-    fullName: row.profiles?.full_name,
-    avatarUrl: row.profiles?.avatar_url,
+    username: row.username ?? null,
+    fullName: row.full_name ?? null,
+    avatarUrl: row.avatar_url ?? null,
     connectedAt: row.connected_at ? new Date(row.connected_at) : null,
     disconnectedAt: row.disconnected_at ? new Date(row.disconnected_at) : null,
     createdAt: new Date(row.created_at),
@@ -1393,7 +1393,7 @@ export default function SessionRoom() {
 
     const handleSignal = async (signal: any) => {
       // Only process messages addressed to me.
-      if (signal.recipient_user_id !== user.id) return;
+      if (!user || signal.recipient_user_id !== user.id) return;
 
       const payload = signal.payload;
       console.log("Received signal:", signal.type, "from", signal.sender_user_id);
@@ -1409,6 +1409,10 @@ export default function SessionRoom() {
           await handleIce(signal.sender_user_id, payload);
           break;
         case "session_status_update":
+          handleSessionStatusUpdate(payload);
+          break;
+        case "status":
+          // New generic DB-safe signal type; payload carries the specific subtype
           handleSessionStatusUpdate(payload);
           break;
       }

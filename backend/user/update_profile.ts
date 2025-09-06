@@ -10,53 +10,39 @@ export const updateProfile = api<UpdateProfileRequest, UpdateProfileResponse>(
     const auth = getAuthData()!;
     const { username, fullName, avatarUrl } = req;
 
-    const updates: Record<string, any> = {
-      updated_at: new Date().toISOString(),
-    };
-    if (username !== undefined) updates.username = username;
-    if (fullName !== undefined) updates.full_name = fullName;
-    if (avatarUrl !== undefined) updates.avatar_url = avatarUrl;
+    // Update auth.users.user_metadata only (no separate profiles table required)
+    const userMeta: Record<string, any> = {};
+    if (fullName !== undefined) userMeta.full_name = fullName;
+    if (avatarUrl !== undefined) userMeta.avatar_url = avatarUrl;
+    if (username !== undefined) userMeta.username = username;
 
-    // Update profiles table
-    const { data: profileData, error: pErr } = await supabaseAdmin
-      .from("profiles")
-      .update(updates)
-      .eq("id", auth.userID)
-      .select()
-      .single();
-
-    if (pErr) {
-      if (pErr.code === "23505") {
-        // unique_violation
-        throw APIError.alreadyExists("username is already taken");
-      }
-      throw APIError.internal("failed to update profile", pErr);
-    }
-
-    // Also update auth.users.user_metadata for JWT consistency
-    const metaUpdates: Record<string, any> = {};
-    if (fullName !== undefined) metaUpdates.full_name = fullName;
-    if (avatarUrl !== undefined) metaUpdates.avatar_url = avatarUrl;
-    if (username !== undefined) metaUpdates.username = username;
-
-    if (Object.keys(metaUpdates).length > 0) {
-      const { error: uErr } = await supabaseAdmin.auth.admin.updateUserById(auth.userID, {
-        user_metadata: metaUpdates,
+    try {
+      const { data, error } = await supabaseAdmin.auth.admin.updateUserById(auth.userID, {
+        user_metadata: userMeta,
       });
-      if (uErr) {
-        // This is not critical if the profile table updated, but log it.
-        console.error("Failed to update user_metadata:", uErr);
+      if (error) {
+        // Surface unique constraint violations nicely if present in details
+        if ((error as any).status === 409) {
+          throw APIError.alreadyExists("username is already taken");
+        }
+        throw APIError.internal("failed to update user profile", error as any);
       }
+
+      const updated = data?.user;
+      const meta = (updated?.user_metadata as Record<string, any>) || {};
+
+      const profile: Profile = {
+        id: auth.userID,
+        username: meta.username ?? null,
+        fullName: meta.full_name ?? null,
+        avatarUrl: meta.avatar_url ?? null,
+        updatedAt: new Date(),
+      };
+
+      return { profile };
+    } catch (err: any) {
+      if (err instanceof APIError) throw err;
+      throw APIError.internal("unexpected error updating profile", err);
     }
-
-    const profile: Profile = {
-      id: profileData.id,
-      username: profileData.username,
-      fullName: profileData.full_name,
-      avatarUrl: profileData.avatar_url,
-      updatedAt: profileData.updated_at ? new Date(profileData.updated_at) : null,
-    };
-
-    return { profile };
   }
 );

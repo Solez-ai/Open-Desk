@@ -47,7 +47,7 @@ export const broadcastStatus = api<BroadcastStatusRequest, BroadcastStatusRespon
       throw APIError.internal("failed to get participants", partErr);
     }
 
-    // Create a signal to broadcast the status change
+    // Create a signal payload describing the status update
     const signalData = {
       type: "session_status_update",
       sessionId: req.sessionId,
@@ -56,12 +56,13 @@ export const broadcastStatus = api<BroadcastStatusRequest, BroadcastStatusRespon
     };
 
     // Send to all participants
-    const signalPromises = participants.map(participant => 
+    const signalPromises = participants.map(participant =>
       supabaseAdmin.from("signals").insert({
         session_id: req.sessionId,
         sender_user_id: auth.userID,
         recipient_user_id: participant.user_id,
-        type: "session_status_update",
+        // Use generic "status" type to comply with DB CHECK constraint
+        type: "status",
         payload: signalData,
       })
     );
