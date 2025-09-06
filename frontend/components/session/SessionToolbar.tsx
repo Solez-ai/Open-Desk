@@ -184,16 +184,22 @@ export default function SessionToolbar({
             </Tooltip>
 
             {session.allowClipboard && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" onClick={onSyncClipboard}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Sync clipboard</p>
-                </TooltipContent>
-              </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={onSyncClipboard}
+                  className={session.allowClipboard ? "border-emerald-500/50 hover:bg-emerald-500/10" : "opacity-50 cursor-not-allowed"}
+                  disabled={!session.allowClipboard}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{session.allowClipboard ? "Sync clipboard (Auto-sync enabled)" : "Clipboard sync disabled"}</p>
+              </TooltipContent>
+            </Tooltip>
             )}
 
             <input

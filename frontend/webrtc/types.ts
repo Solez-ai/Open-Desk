@@ -40,6 +40,10 @@ export interface KeyMessage {
   type: "keydown" | "keyup";
   key: string;
   code: string;
+  ctrlKey?: boolean;
+  altKey?: boolean;
+  shiftKey?: boolean;
+  metaKey?: boolean;
 }
 
 export interface ClipboardMessage {

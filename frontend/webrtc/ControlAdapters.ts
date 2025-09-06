@@ -6,8 +6,8 @@ export interface ControlAdapter {
   onMouseDown(x: number, y: number, button: number): void;
   onMouseUp(x: number, y: number, button: number): void;
   onScroll(deltaX: number, deltaY: number): void;
-  onKeyDown(key: string, code: string): void;
-  onKeyUp(key: string, code: string): void;
+  onKeyDown(key: string, code: string, modifiers?: { ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }): void;
+  onKeyUp(key: string, code: string, modifiers?: { ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }): void;
   onClipboard(content: string): Promise<void>;
 }
 
@@ -24,7 +24,7 @@ export class BrowserEmulatedAdapter implements ControlAdapter {
 
   constructor() {
     this.desktopController = new NativeDesktopController();
-  }
+    }
 
   async init(): Promise<boolean> {
     try {
@@ -34,7 +34,7 @@ export class BrowserEmulatedAdapter implements ControlAdapter {
       if (success) {
         this.isInitialized = true;
         console.log('[BrowserEmulatedAdapter] Enhanced browser control initialized successfully');
-        return true;
+      return true;
       } else {
         throw new Error('Desktop controller initialization failed');
       }
@@ -81,18 +81,18 @@ export class BrowserEmulatedAdapter implements ControlAdapter {
     this.desktopController.simulateScroll(deltaX, deltaY);
   }
 
-  onKeyDown(key: string, code: string): void {
+  onKeyDown(key: string, code: string, modifiers?: { ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }): void {
     if (!this.isInitialized || !this.desktopController.isReady()) return;
     
-    console.log(`[BrowserEmulatedAdapter] Key down: ${key} (${code})`);
-    this.desktopController.simulateKeyPress(key, code, 'down');
+    console.log(`[BrowserEmulatedAdapter] Key down: ${key} (${code}) with modifiers:`, modifiers);
+    this.desktopController.simulateKeyPress(key, code, 'down', modifiers);
   }
 
-  onKeyUp(key: string, code: string): void {
+  onKeyUp(key: string, code: string, modifiers?: { ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }): void {
     if (!this.isInitialized || !this.desktopController.isReady()) return;
     
-    console.log(`[BrowserEmulatedAdapter] Key up: ${key} (${code})`);
-    this.desktopController.simulateKeyPress(key, code, 'up');
+    console.log(`[BrowserEmulatedAdapter] Key up: ${key} (${code}) with modifiers:`, modifiers);
+    this.desktopController.simulateKeyPress(key, code, 'up', modifiers);
   }
 
   async onClipboard(content: string): Promise<void> {
@@ -264,27 +264,27 @@ export class LocalAgentAdapter implements ControlAdapter {
     }
   }
 
-  onKeyDown(key: string, code: string): void {
+  onKeyDown(key: string, code: string, modifiers?: { ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }): void {
     if (!this.isInitialized) return;
     
-    console.log(`[LocalAgentAdapter] Key down: ${key} (${code})`);
-    this.sendToAgent('key-down', { key, code });
+    console.log(`[LocalAgentAdapter] Key down: ${key} (${code}) with modifiers:`, modifiers);
+    this.sendToAgent('key-down', { key, code, modifiers });
     
     // Always use browser simulation as fallback
     if (this.desktopController.isReady()) {
-      this.desktopController.simulateKeyPress(key, code, 'down');
+      this.desktopController.simulateKeyPress(key, code, 'down', modifiers);
     }
   }
 
-  onKeyUp(key: string, code: string): void {
+  onKeyUp(key: string, code: string, modifiers?: { ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }): void {
     if (!this.isInitialized) return;
     
-    console.log(`[LocalAgentAdapter] Key up: ${key} (${code})`);
-    this.sendToAgent('key-up', { key, code });
+    console.log(`[LocalAgentAdapter] Key up: ${key} (${code}) with modifiers:`, modifiers);
+    this.sendToAgent('key-up', { key, code, modifiers });
     
     // Always use browser simulation as fallback
     if (this.desktopController.isReady()) {
-      this.desktopController.simulateKeyPress(key, code, 'up');
+      this.desktopController.simulateKeyPress(key, code, 'up', modifiers);
     }
   }
 

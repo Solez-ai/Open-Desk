@@ -98,6 +98,10 @@ export default function SessionRoom() {
   // Control adapter (host-side)
   const controlAdapterRef = useRef<ControlAdapter | null>(null);
   const [controlAdapterLabel, setControlAdapterLabel] = useState<string | undefined>(undefined);
+  
+  // Clipboard monitoring
+  const lastClipboardContent = useRef<string>('');
+  const clipboardCheckInterval = useRef<NodeJS.Timeout | null>(null);
 
   const myParticipant = participants.find((p) => p.userId === user?.id);
   const myRole = myParticipant?.role;
@@ -194,9 +198,25 @@ export default function SessionRoom() {
     let destroyed = false;
     async function setupAdapter() {
       if (myRole !== "host") return;
+      
       // Clean previous
       controlAdapterRef.current?.destroy();
       controlAdapterRef.current = null;
+
+      // Request clipboard permissions if clipboard sync is enabled
+      if (currentSession?.allowClipboard) {
+        try {
+          await navigator.clipboard.readText();
+          console.log(`[Setup] Clipboard permission granted`);
+        } catch (err) {
+          console.log(`[Setup] Clipboard permission not granted yet:`, err);
+          toast({
+            title: "Clipboard Permission Needed",
+            description: "Please allow clipboard access for clipboard sync to work.",
+            duration: 5000,
+          });
+        }
+      }
 
       const native = new LocalAgentAdapter();
       const ok = await native.init();
@@ -209,8 +229,8 @@ export default function SessionRoom() {
         // Only show toast in development mode
         if (import.meta.env.DEV) {
           toast({
-            title: "Using browser emulation",
-            description: "Remote control will show visual feedback. Native agent not available.",
+            title: "Using enhanced browser control",
+            description: "Remote control with visual feedback enabled.",
             duration: 3000,
           });
         }
@@ -221,7 +241,7 @@ export default function SessionRoom() {
         // Only show toast in development mode
         if (import.meta.env.DEV) {
           toast({
-            title: "Native agent connected",
+            title: "Native agent with browser fallback",
             description: "Full remote control enabled.",
             duration: 3000,
           });
@@ -236,7 +256,7 @@ export default function SessionRoom() {
       controlAdapterRef.current = null;
       setControlAdapterLabel(undefined);
     };
-  }, [myRole, toast]);
+  }, [myRole, toast, currentSession?.allowClipboard]);
 
   // Map connection state to a user-friendly quality label
   const updateConnectionIndicators = useCallback((state: RTCPeerConnectionState) => {
@@ -331,68 +351,110 @@ export default function SessionRoom() {
         return;
       }
 
-      // Clipboard sync both directions if allowed
+      // Enhanced clipboard sync both directions if allowed
       if (message.type === "clipboard") {
         const content = (message as any).content as string;
-        // Host accepts controller clipboard if allowed
+        console.log(`[Clipboard] Received clipboard content from ${senderUserId}: ${content.length} characters`);
+        
         if (currentSession?.allowClipboard) {
           try {
-            // Try native agent first
+            // Try control adapter first (for host)
             if (myRole === "host" && controlAdapterRef.current) {
+              console.log(`[Clipboard] Host: Using control adapter for clipboard sync`);
               await controlAdapterRef.current.onClipboard(content);
+            } else {
+              console.log(`[Clipboard] Using browser clipboard API`);
+              await navigator.clipboard.writeText(content);
             }
-            // Also try browser clipboard as best-effort
-            await navigator.clipboard.writeText(content);
+            
             toast({
               title: "Clipboard synced",
-              description: "Clipboard content received.",
+              description: `Clipboard content received from ${myRole === 'host' ? 'controller' : 'host'}.`,
             });
+            console.log(`[Clipboard] Successfully wrote clipboard content`);
           } catch (err) {
-            console.error("Clipboard write failed:", err);
+            console.error(`[Clipboard] Clipboard write failed:`, err);
+            toast({
+              variant: "destructive",
+              title: "Clipboard sync failed",
+              description: "Unable to write to clipboard. Please check browser permissions.",
+            });
           }
+        } else {
+          console.log(`[Clipboard] Clipboard sync disabled for this session`);
+          toast({
+            variant: "destructive",
+            title: "Clipboard disabled",
+            description: "Clipboard sync is not enabled for this session.",
+          });
         }
         return;
       }
 
-      // Remote control events (host-side)
+      // Enhanced remote control events (host-side)
       if (myRole !== "host") {
-        console.log("Not host, ignoring control message");
+        console.log(`[Control] Not host (${myRole}), ignoring control message: ${message.type}`);
         return;
       }
+      
       if (!isControlEnabled) {
-        console.log("Control disabled, ignoring control message");
+        console.log(`[Control] Control disabled, ignoring control message: ${message.type}`);
         return;
       }
 
       const adapter = controlAdapterRef.current;
       if (!adapter) {
-        console.log("No control adapter available");
+        console.log(`[Control] No control adapter available for message: ${message.type}`);
         return;
       }
 
-      console.log("Processing control message:", message.type);
+      console.log(`[Control] Processing control message from ${senderUserId}: ${message.type}`);
 
       switch (message.type) {
         case "mousemove":
+          console.log(`[Control] Mouse move: ${message.x.toFixed(3)}, ${message.y.toFixed(3)}`);
           adapter.onMouseMove(message.x, message.y);
           break;
+          
         case "mousedown":
+          const downButton = message.button === 0 ? 'Left' : message.button === 1 ? 'Middle' : 'Right';
+          console.log(`[Control] Mouse down: ${downButton} at ${message.x.toFixed(3)}, ${message.y.toFixed(3)}`);
           adapter.onMouseDown(message.x, message.y, message.button);
           break;
+          
         case "mouseup":
+          const upButton = message.button === 0 ? 'Left' : message.button === 1 ? 'Middle' : 'Right';
+          console.log(`[Control] Mouse up: ${upButton} at ${message.x.toFixed(3)}, ${message.y.toFixed(3)}`);
           adapter.onMouseUp(message.x, message.y, message.button);
           break;
+          
         case "scroll":
+          console.log(`[Control] Scroll: deltaX=${message.deltaX}, deltaY=${message.deltaY}`);
           adapter.onScroll(message.deltaX, message.deltaY);
           break;
+          
         case "keydown":
-          adapter.onKeyDown(message.key, message.code);
+          console.log(`[Control] Key down: ${message.key} (${message.code}) from ${senderUserId} - modifiers: ctrl:${message.ctrlKey} alt:${message.altKey} shift:${message.shiftKey}`);
+          adapter.onKeyDown(message.key, message.code, {
+            ctrlKey: message.ctrlKey,
+            altKey: message.altKey,
+            shiftKey: message.shiftKey,
+            metaKey: message.metaKey
+          });
           break;
+          
         case "keyup":
-          adapter.onKeyUp(message.key, message.code);
+          console.log(`[Control] Key up: ${message.key} (${message.code}) from ${senderUserId} - modifiers: ctrl:${message.ctrlKey} alt:${message.altKey} shift:${message.shiftKey}`);
+          adapter.onKeyUp(message.key, message.code, {
+            ctrlKey: message.ctrlKey,
+            altKey: message.altKey,
+            shiftKey: message.shiftKey,
+            metaKey: message.metaKey
+          });
           break;
+          
         default:
-          console.warn("Unknown message type:", message.type);
+          console.warn(`[Control] Unknown control message type: ${message.type}`);
       }
     },
     [currentSession?.allowClipboard, isControlEnabled, myRole, toast]
@@ -1110,7 +1172,7 @@ export default function SessionRoom() {
     [hostParticipant, myRole, participants, sendDataTo, toast, user]
   );
 
-  // Clipboard sync
+  // Enhanced clipboard sync
   const syncClipboard = useCallback(async () => {
     if (!currentSession?.allowClipboard) {
       toast({
@@ -1120,24 +1182,138 @@ export default function SessionRoom() {
       });
       return;
     }
+
     try {
+      console.log(`[Clipboard] Reading clipboard content...`);
       const text = await navigator.clipboard.readText();
-      if (!text) {
-        toast({ title: "Clipboard empty", description: "Nothing to sync." });
+      
+      if (!text || text.trim().length === 0) {
+        toast({ 
+          title: "Clipboard empty", 
+          description: "Nothing to sync." 
+        });
         return;
       }
-      const msg: ControlMessage = { type: "clipboard", content: text } as any;
-      sendData(msg);
-      toast({ title: "Clipboard sent", description: "Clipboard content sent to peer(s)." });
+
+      console.log(`[Clipboard] Clipboard content read: ${text.length} characters`);
+      
+      const msg: ControlMessage = { 
+        type: "clipboard", 
+        content: text.trim() 
+      } as any;
+      
+      // Send to appropriate recipients
+      let sentCount = 0;
+      if (myRole === "controller" && hostParticipant) {
+        if (sendDataTo(hostParticipant.userId, msg)) {
+          sentCount++;
+          console.log(`[Clipboard] Sent clipboard to host: ${hostParticipant.userId}`);
+        }
+      } else if (myRole === "host") {
+        participants
+          .filter((p) => p.role === "controller" && p.status === "joined")
+          .forEach((p) => {
+            if (sendDataTo(p.userId, msg)) {
+              sentCount++;
+              console.log(`[Clipboard] Sent clipboard to controller: ${p.userId}`);
+            }
+          });
+      }
+
+      if (sentCount > 0) {
+        toast({ 
+          title: "Clipboard sent", 
+          description: `Clipboard content sent to ${sentCount} peer(s).` 
+        });
+        console.log(`[Clipboard] Successfully sent to ${sentCount} recipients`);
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Clipboard sync failed",
+          description: "No data channels are ready for clipboard sync.",
+        });
+        console.warn(`[Clipboard] Failed to send - no ready data channels`);
+      }
     } catch (err) {
-      console.error("Clipboard read failed:", err);
+      console.error(`[Clipboard] Clipboard read failed:`, err);
       toast({
         variant: "destructive",
         title: "Clipboard error",
-        description: "Unable to access clipboard. Please allow permission.",
+        description: "Unable to access clipboard. Please allow permission in browser settings.",
       });
     }
-  }, [currentSession?.allowClipboard, sendData, toast]);
+  }, [currentSession?.allowClipboard, sendDataTo, toast, myRole, hostParticipant, participants]);
+
+  // Automatic clipboard monitoring for seamless sync
+  useEffect(() => {
+    if (!currentSession?.allowClipboard) {
+      // Stop monitoring if clipboard sync is disabled
+      if (clipboardCheckInterval.current) {
+        clearInterval(clipboardCheckInterval.current);
+        clipboardCheckInterval.current = null;
+      }
+      return;
+    }
+
+    console.log(`[Clipboard] Starting automatic clipboard monitoring`);
+    
+    const checkClipboard = async () => {
+      try {
+        const currentContent = await navigator.clipboard.readText();
+        
+        if (currentContent && 
+            currentContent.trim() !== lastClipboardContent.current && 
+            currentContent.trim().length > 0) {
+          
+          console.log(`[Clipboard] Detected clipboard change: ${currentContent.length} characters`);
+          lastClipboardContent.current = currentContent.trim();
+          
+          // Auto-sync clipboard content
+          const msg: ControlMessage = { 
+            type: "clipboard", 
+            content: currentContent.trim() 
+          } as any;
+          
+          let sentCount = 0;
+          if (myRole === "controller" && hostParticipant) {
+            if (sendDataTo(hostParticipant.userId, msg)) {
+              sentCount++;
+              console.log(`[Clipboard] Auto-synced to host`);
+            }
+          } else if (myRole === "host") {
+            participants
+              .filter((p) => p.role === "controller" && p.status === "joined")
+              .forEach((p) => {
+                if (sendDataTo(p.userId, msg)) {
+                  sentCount++;
+                  console.log(`[Clipboard] Auto-synced to controller: ${p.userId}`);
+                }
+              });
+          }
+          
+          if (sentCount > 0) {
+            console.log(`[Clipboard] Auto-synced to ${sentCount} peer(s)`);
+          }
+        }
+      } catch (err) {
+        // Silently fail for auto-sync - user might not have granted permission yet
+        console.debug(`[Clipboard] Auto-sync check failed (permission not granted):`, err);
+      }
+    };
+
+    // Check clipboard every 2 seconds
+    clipboardCheckInterval.current = setInterval(checkClipboard, 2000);
+    
+    // Initial check
+    checkClipboard();
+
+    return () => {
+      if (clipboardCheckInterval.current) {
+        clearInterval(clipboardCheckInterval.current);
+        clipboardCheckInterval.current = null;
+      }
+    };
+  }, [currentSession?.allowClipboard, myRole, hostParticipant, participants, sendDataTo]);
 
   // Subscribe to realtime updates
   useEffect(() => {

@@ -115,14 +115,14 @@ Visit `http://localhost:5173` to access the application.
 
 ## 🎯 Usage Guide
 
-### For Hosts (Screen Sharers)
+### For Contollers (Remote Users)
 
 1. **Create Session**: Click "Create Session" and configure settings
 2. **Share Session Code**: Provide the generated code to controllers
 3. **Start Screen Sharing**: Click "Start Screen Sharing" to begin
 4. **Manage Session**: Use toolbar to control quality, chat, and participants
 
-### For Controllers (Remote Users)
+### For Hosts (Screen Sharers)
 
 1. **Join Session**: Enter the session code provided by the host
 2. **Wait for Stream**: Host must start screen sharing first
@@ -376,7 +376,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Contributors** who helped make this project possible
 
 ---
-
-**Made with ❤️ by the OpenDesk Team**
-
-For more information, visit our [website](https://opendesk.app) or check out the [documentation](https://docs.opendesk.app).

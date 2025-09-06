@@ -249,7 +249,7 @@ export class NativeDesktopController {
     console.log(`[DesktopController] Scroll: deltaX=${deltaX}, deltaY=${deltaY}`);
   }
 
-  simulateKeyPress(key: string, code: string, action: 'down' | 'up'): void {
+  simulateKeyPress(key: string, code: string, action: 'down' | 'up', modifiers?: { ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }): void {
     if (!this.isInitialized) return;
 
     const eventType = action === 'down' ? 'keydown' : 'keyup';
@@ -263,6 +263,12 @@ export class NativeDesktopController {
     // Get the currently focused element or use document.body
     const target = document.activeElement || document.body;
 
+    // Use provided modifier keys or detect from keyboard state
+    const ctrlKey = modifiers?.ctrlKey ?? (this.keyboardState.has('ControlLeft') || this.keyboardState.has('ControlRight'));
+    const altKey = modifiers?.altKey ?? (this.keyboardState.has('AltLeft') || this.keyboardState.has('AltRight'));
+    const shiftKey = modifiers?.shiftKey ?? (this.keyboardState.has('ShiftLeft') || this.keyboardState.has('ShiftRight'));
+    const metaKey = modifiers?.metaKey ?? (this.keyboardState.has('MetaLeft') || this.keyboardState.has('MetaRight'));
+
     // Create keyboard event with comprehensive properties
     const keyboardEvent = new KeyboardEvent(eventType, {
       key: key,
@@ -270,21 +276,23 @@ export class NativeDesktopController {
       keyCode: this.getKeyCode(key),
       which: this.getKeyCode(key),
       charCode: key.length === 1 ? key.charCodeAt(0) : 0,
-      shiftKey: this.keyboardState.has('ShiftLeft') || this.keyboardState.has('ShiftRight'),
-      ctrlKey: this.keyboardState.has('ControlLeft') || this.keyboardState.has('ControlRight'),
-      altKey: this.keyboardState.has('AltLeft') || this.keyboardState.has('AltRight'),
-      metaKey: this.keyboardState.has('MetaLeft') || this.keyboardState.has('MetaRight'),
+      shiftKey,
+      ctrlKey,
+      altKey,
+      metaKey,
       repeat: false,
       bubbles: true,
       cancelable: true,
       composed: true
     });
 
+    console.log(`[DesktopController] Dispatching ${eventType} - Key: ${key}, Modifiers: ctrl:${ctrlKey} alt:${altKey} shift:${shiftKey} meta:${metaKey}`);
+
     // Dispatch to focused element
     target.dispatchEvent(keyboardEvent);
 
-    // For keydown on printable characters, also dispatch input event
-    if (action === 'down' && key.length === 1 && !keyboardEvent.ctrlKey && !keyboardEvent.altKey) {
+    // For keydown on printable characters without control modifiers, also dispatch input event
+    if (action === 'down' && key.length === 1 && !ctrlKey && !altKey && !metaKey) {
       const inputEvent = new InputEvent('input', {
         data: key,
         inputType: 'insertText',
@@ -303,6 +311,10 @@ export class NativeDesktopController {
           const currentValue = target.value;
           target.value = currentValue.slice(0, start) + key + currentValue.slice(end);
           target.selectionStart = target.selectionEnd = start + 1;
+          
+          // Trigger input event on the element
+          const changeEvent = new Event('input', { bubbles: true });
+          target.dispatchEvent(changeEvent);
         }
       }, 5);
     }

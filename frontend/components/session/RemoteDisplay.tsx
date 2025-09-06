@@ -119,9 +119,21 @@ export default function RemoteDisplay({
   const handleKeyEvent = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!isControlEnabled) return;
     e.preventDefault();
+    e.stopPropagation();
     
-    console.log(`Key ${e.type}: ${e.key} (${e.code})`);
-    sendControlMessage({ type: e.type as "keydown" | "keyup", key: e.key, code: e.code });
+    console.log(`[RemoteDisplay] Key ${e.type}: ${e.key} (${e.code}) - ctrl:${e.ctrlKey} alt:${e.altKey} shift:${e.shiftKey}`);
+    
+    const controlMessage = { 
+      type: e.type as "keydown" | "keyup", 
+      key: e.key, 
+      code: e.code,
+      ctrlKey: e.ctrlKey,
+      altKey: e.altKey,
+      shiftKey: e.shiftKey,
+      metaKey: e.metaKey
+    };
+    
+    sendControlMessage(controlMessage);
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
