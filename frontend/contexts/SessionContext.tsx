@@ -23,7 +23,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [connectionQuality, setConnectionQuality] = useState<"excellent" | "good" | "poor" | "offline">("offline");
 
   const updateParticipant = useCallback((participant: Participant) => {
-    console.log(`[SessionContext] Updating participant: ${participant.userId} (${participant.role}) - ${participant.status}`);
     setParticipants(prev => {
       const index = prev.findIndex(p => p.id === participant.id);
       if (index >= 0) {
@@ -36,7 +35,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const removeParticipant = useCallback((userId: string) => {
-    console.log(`[SessionContext] Removing participant: ${userId}`);
     setParticipants(prev => prev.filter(p => p.userId !== userId));
   }, []);
 
