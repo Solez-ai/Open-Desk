@@ -364,8 +364,10 @@ export default function SessionRoom() {
               await controlAdapterRef.current.onClipboard(content);
             } else {
               console.log(`[Clipboard] Using browser clipboard API`);
-            await navigator.clipboard.writeText(content);
+              await navigator.clipboard.writeText(content);
             }
+            // Prevent auto-sync feedback loops by updating last seen content
+            lastClipboardContent.current = content.trim();
             
             toast({
               title: "Clipboard synced",
