@@ -1414,22 +1414,6 @@ export default function SessionRoom() {
       }
     };
 
-    const handleSessionStatusUpdate = useCallback((payload: any) => {
-      console.log("Received session status update:", payload);
-      
-      if (payload.sessionId === currentSession?.id) {
-        // Update session status
-        setCurrentSession(prev => prev ? { ...prev, status: payload.status } : null);
-        
-        // Show toast notification
-        toast({
-          title: "Session Status Updated",
-          description: `Session is now ${payload.status}`,
-          duration: 3000,
-        });
-      }
-    }, [currentSession?.id, setCurrentSession, toast]);
-
     const unsubscribe = subscribeToSession(sessionId, {
       onSessionUpdate: (updated: any) => {
         // Updated session status
