@@ -45,7 +45,10 @@ export default function ChatPanel({ sessionId, onClose }: ChatPanelProps) {
   const getSenderName = (senderId: string) => {
     if (senderId === user?.id) return "You";
     const participant = participants.find(p => p.userId === senderId);
-    return participant?.username || participant?.fullName || `User ${senderId.slice(0, 6)}`;
+    if (participant) {
+      return participant.username || participant.fullName || `${participant.role === 'host' ? 'Host' : 'Controller'} ${senderId.slice(-4)}`;
+    }
+    return `User ${senderId.slice(-6)}`;
   };
 
   // Load existing messages and subscribe to new ones

@@ -19,6 +19,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/components/ui/use-toast";
 import { useNavigate } from "react-router-dom";
 import type { Session } from "~backend/session/types";
 import { useRef } from "react";
@@ -65,6 +66,7 @@ export default function SessionToolbar({
 }: SessionToolbarProps) {
   const navigate = useNavigate();
   const { participants } = useSession();
+  const { toast } = useToast();
   const joinedCount = participants.filter((p) => p.status === "joined").length;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -75,7 +77,39 @@ export default function SessionToolbar({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validate file before upload
+      const maxSize = 100 * 1024 * 1024; // 100MB
+      if (file.size > maxSize) {
+        toast({
+          variant: "destructive",
+          title: "File too large",
+          description: `File size must be under 100MB. Selected file is ${Math.round(file.size / 1024 / 1024)}MB.`,
+        });
+        e.target.value = '';
+        return;
+      }
+
+      // Check for dangerous file types
+      const dangerousExtensions = ['.exe', '.bat', '.cmd', '.scr', '.com', '.pif', '.vbs', '.js'];
+      const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+      if (dangerousExtensions.includes(fileExtension)) {
+        toast({
+          variant: "destructive",
+          title: "File type not allowed",
+          description: `Files with extension ${fileExtension} are not allowed for security reasons.`,
+        });
+        e.target.value = '';
+        return;
+      }
+
+      console.log(`[FileUpload] Uploading file: ${file.name} (${file.size} bytes, ${file.type})`);
       onUploadFile(file);
+      
+      toast({
+        title: "File upload started",
+        description: `Uploading "${file.name}" (${Math.round(file.size / 1024)} KB)...`,
+      });
+      
       e.target.value = "";
     }
   };

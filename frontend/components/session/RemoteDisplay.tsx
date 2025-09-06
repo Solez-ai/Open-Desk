@@ -24,14 +24,61 @@ export default function RemoteDisplay({
 
   useEffect(() => {
     if (videoRef.current && remoteStream) {
-      console.log("Setting video srcObject:", remoteStream);
-      console.log("Video tracks:", remoteStream.getTracks().map(t => `${t.kind}:${t.id}`));
-      videoRef.current.srcObject = remoteStream;
+      console.log(`[RemoteDisplay] Setting video srcObject with ${remoteStream.getTracks().length} tracks`);
+      console.log(`[RemoteDisplay] Video tracks:`, remoteStream.getTracks().map(t => `${t.kind}:${t.id}:${t.enabled}:${t.readyState}`));
       
-      // Force play
-      videoRef.current.play().catch(err => {
-        console.error("Video play failed:", err);
-      });
+      const video = videoRef.current;
+      video.srcObject = remoteStream;
+      video.muted = false;
+      video.autoplay = true;
+      video.playsInline = true;
+      
+      // Enhanced play attempt with multiple retries
+      const attemptPlay = async (attempt = 1) => {
+        try {
+          await video.play();
+          console.log(`[RemoteDisplay] Video playing successfully on attempt ${attempt}`);
+          console.log(`[RemoteDisplay] Video dimensions: ${video.videoWidth}x${video.videoHeight}`);
+        } catch (err) {
+          console.error(`[RemoteDisplay] Video play failed on attempt ${attempt}:`, err);
+          
+          if (attempt < 3) {
+            setTimeout(() => attemptPlay(attempt + 1), 500);
+          }
+        }
+      };
+      
+      // Try playing immediately
+      attemptPlay();
+      
+      // Also try after a short delay
+      setTimeout(() => attemptPlay(), 100);
+      
+      // Listen for video events
+      const handleLoadedData = () => {
+        console.log(`[RemoteDisplay] Video loaded data - dimensions: ${video.videoWidth}x${video.videoHeight}`);
+      };
+      
+      const handleCanPlay = () => {
+        console.log(`[RemoteDisplay] Video can play`);
+        video.play().catch(err => console.warn(`[RemoteDisplay] Auto-play failed:`, err));
+      };
+      
+      const handleError = (e: Event) => {
+        console.error(`[RemoteDisplay] Video error:`, e);
+      };
+      
+      video.addEventListener('loadeddata', handleLoadedData);
+      video.addEventListener('canplay', handleCanPlay);
+      video.addEventListener('error', handleError);
+      
+      return () => {
+        video.removeEventListener('loadeddata', handleLoadedData);
+        video.removeEventListener('canplay', handleCanPlay);
+        video.removeEventListener('error', handleError);
+      };
+    } else {
+      console.log(`[RemoteDisplay] No video ref or remote stream available`);
     }
   }, [remoteStream]);
 
@@ -115,11 +162,43 @@ export default function RemoteDisplay({
         playsInline
         muted={false}
         data-remote="true"
-        className="w-full h-full object-contain"
-        onLoadedMetadata={() => console.log("Video metadata loaded")}
-        onCanPlay={() => console.log("Video can play")}
-        onError={(e) => console.error("Video error:", e)}
+        className="w-full h-full object-contain bg-gray-800"
+        style={{ minHeight: '200px' }}
+        onLoadedMetadata={(e) => {
+          const video = e.target as HTMLVideoElement;
+          console.log(`[RemoteDisplay] Video metadata loaded - ${video.videoWidth}x${video.videoHeight}`);
+        }}
+        onCanPlay={(e) => {
+          const video = e.target as HTMLVideoElement;
+          console.log(`[RemoteDisplay] Video can play - ${video.videoWidth}x${video.videoHeight}`);
+        }}
+        onPlay={() => console.log(`[RemoteDisplay] Video started playing`)}
+        onPause={() => console.log(`[RemoteDisplay] Video paused`)}
+        onError={(e) => {
+          const video = e.target as HTMLVideoElement;
+          console.error(`[RemoteDisplay] Video error:`, video.error);
+        }}
+        onLoadStart={() => console.log(`[RemoteDisplay] Video load started`)}
+        onWaiting={() => console.log(`[RemoteDisplay] Video waiting for data`)}
+        onStalled={() => console.log(`[RemoteDisplay] Video stalled`)}
       />
+      
+      {/* Debug overlay for stream status */}
+      {!remoteStream && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-800/50">
+          <div className="text-center text-white p-4">
+            <div className="animate-pulse text-lg mb-2">🔄</div>
+            <p className="text-sm">Waiting for video stream...</p>
+            <p className="text-xs text-gray-400 mt-1">Host needs to start screen sharing</p>
+          </div>
+        </div>
+      )}
+      
+      {remoteStream && (
+        <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
+          📺 {remoteStream.getTracks().filter(t => t.kind === 'video').length} video, {remoteStream.getTracks().filter(t => t.kind === 'audio').length} audio
+        </div>
+      )}
       
       {/* Remote cursor visualization when control is enabled */}
       {isControlEnabled && showCursor && (

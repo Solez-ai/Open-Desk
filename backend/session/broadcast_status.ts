@@ -1,25 +1,24 @@
 import { api, APIError } from "encore.dev/api";
 import { getAuthData } from "~encore/auth";
-import supabaseAdmin from "./supabase";
+import supabaseAdmin from "../signaling/supabase";
 import type { BroadcastStatusRequest, BroadcastStatusResponse } from "./types";
 
-// Broadcasts session status changes to all participants
+// Broadcasts session status updates to all participants via Supabase signals
 export const broadcastStatus = api<BroadcastStatusRequest, BroadcastStatusResponse>(
-  { expose: true, method: "POST", path: "/sessions/:sessionId/broadcast-status", auth: true },
+  { expose: true, method: "POST", path: "/session/broadcast-status", auth: true },
   async (req) => {
     const auth = getAuthData()!;
 
-    // Verify the user is a participant in this session
+    // Verify the sender is a participant in the session
     const { data: participant, error: pErr } = await supabaseAdmin
       .from("session_participants")
-      .select("id, role")
+      .select("*")
       .eq("session_id", req.sessionId)
       .eq("user_id", auth.userID)
-      .eq("status", "joined")
       .maybeSingle();
 
     if (pErr) {
-      throw APIError.internal("failed to verify participant", pErr);
+      throw APIError.internal("participant lookup failed", pErr);
     }
     if (!participant) {
       throw APIError.permissionDenied("not a participant in this session");
@@ -28,43 +27,49 @@ export const broadcastStatus = api<BroadcastStatusRequest, BroadcastStatusRespon
     // Get current session status
     const { data: session, error: sErr } = await supabaseAdmin
       .from("sessions")
-      .select("*")
+      .select("status")
       .eq("id", req.sessionId)
       .single();
 
     if (sErr || !session) {
-      throw APIError.internal("failed to get session", sErr ?? undefined);
+      throw APIError.internal("session lookup failed", sErr);
     }
 
-    // Get all participants
-    const { data: participants, error: partErr } = await supabaseAdmin
+    // Get all participants in the session
+    const { data: participants, error: partsErr } = await supabaseAdmin
       .from("session_participants")
       .select("user_id")
       .eq("session_id", req.sessionId)
       .eq("status", "joined");
 
-    if (partErr) {
-      throw APIError.internal("failed to get participants", partErr);
+    if (partsErr) {
+      throw APIError.internal("participants lookup failed", partsErr);
     }
 
-    // Create a signal to broadcast the status change
-    const signalData = {
+    // Create status update signal
+    const statusUpdate = {
       type: "session_status_update",
-      sessionId: req.sessionId,
       status: session.status,
       timestamp: new Date().toISOString(),
+      sessionId: req.sessionId,
     };
 
-    // Send to all participants
-    const signalPromises = participants.map(participant => 
-      supabaseAdmin.from("signals").insert({
-        session_id: req.sessionId,
-        sender_user_id: auth.userID,
-        recipient_user_id: participant.user_id,
-        type: "session_status_update",
-        payload: signalData,
-      })
-    );
+    // Send status update to all participants
+    const signalPromises = participants.map(async (participant) => {
+      const { error } = await supabaseAdmin
+        .from("signals")
+        .insert({
+          session_id: req.sessionId,
+          type: "session_status_update",
+          sender_user_id: auth.userID,
+          recipient_user_id: participant.user_id,
+          payload: statusUpdate,
+        });
+
+      if (error) {
+        console.error(`Failed to send status update to ${participant.user_id}:`, error);
+      }
+    });
 
     await Promise.all(signalPromises);
 

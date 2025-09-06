@@ -24,6 +24,7 @@ import { ICEOptimizer } from "../../webrtc/ICEOptimizer";
 import { AdaptiveBitrateController } from "../../webrtc/AdaptiveBitrate";
 import { ConnectionMonitor } from "../../webrtc/ConnectionMonitor";
 import { BrowserEmulatedAdapter, ControlAdapter, LocalAgentAdapter } from "../../webrtc/ControlAdapters";
+import { ScreenShareOptimizer } from "../../webrtc/ScreenShareOptimizer";
 
 type PCRecord = {
   pc: RTCPeerConnection;
@@ -263,8 +264,14 @@ export default function SessionRoom() {
 
   // Handle incoming data messages (controller -> host and file transfers, clipboard)
   const handleDataMessage = useCallback(
-    async (message: ControlMessage, senderUserId?: string) => {
+    async (message: any, senderUserId?: string) => {
       console.log("Received data message:", message.type, "from", senderUserId);
+
+      // Handle capability messages
+      if (message.type === "capability") {
+        console.log("Received capability message:", message.role, "features:", message.features);
+        return;
+      }
 
       // File transfer handling
       if (message.type === "file-meta") {
@@ -384,6 +391,8 @@ export default function SessionRoom() {
         case "keyup":
           adapter.onKeyUp(message.key, message.code);
           break;
+        default:
+          console.warn("Unknown message type:", message.type);
       }
     },
     [currentSession?.allowClipboard, isControlEnabled, myRole, toast]
@@ -405,12 +414,23 @@ export default function SessionRoom() {
         iceConfig,
         async (candidate) => {
           if (candidate) {
+            console.log(`Sending ICE candidate to ${remoteUserId}:`, candidate.type);
             await publishSignal("ice", candidate.toJSON(), remoteUserId);
           }
         },
         (state) => {
           console.log(`Connection state with ${remoteUserId}:`, state);
           updateConnectionIndicators(state);
+          
+          // Update session status when connection is established
+          if (state === "connected" && currentSession?.status === "pending") {
+            console.log("Connection established, updating session status to active");
+            // Broadcast status update to all participants
+            backend.session.broadcastStatus({ sessionId: currentSession.id }).catch(err => 
+              console.error("Failed to broadcast status:", err)
+            );
+          }
+          
           if (state === "disconnected" || state === "failed" || state === "closed") {
             // Clean up on disconnect
             const record = connectionsRef.current.get(remoteUserId);
@@ -439,6 +459,20 @@ export default function SessionRoom() {
       const record: PCRecord = { pc, dc: null, remoteStream: null };
       connectionsRef.current.set(remoteUserId, record);
 
+      // If host has a local stream, attach tracks to the new connection immediately
+      if (myRole === "host" && localStream) {
+        console.log(`[WebRTC] Host: Attaching existing local stream tracks to new peer connection with ${remoteUserId}`);
+        localStream.getTracks().forEach((track) => {
+          try {
+            console.log(`[WebRTC] Adding existing track: ${track.kind} (${track.id}) to new connection`);
+            pc.addTrack(track, localStream);
+          } catch (error) {
+            console.error(`[WebRTC] Failed to add existing track to new connection:`, error);
+          }
+        });
+        console.log(`[WebRTC] New connection ${remoteUserId} has ${pc.getSenders().length} senders`);
+      }
+
       // Set up adaptive bitrate controller
       const bitrateController = new AdaptiveBitrateController(pc);
       const connectionMonitor = bitrateController.getConnectionMonitor();
@@ -455,54 +489,109 @@ export default function SessionRoom() {
         bitrateController.start();
       }
 
+      // Enhanced track handling with better debugging
       pc.ontrack = (event) => {
-        console.log("Received track:", event.track.kind, "from", remoteUserId);
-        console.log("Track streams:", event.streams);
-        console.log("Track readyState:", event.track.readyState);
+        console.log(`[WebRTC] Received track: ${event.track.kind} from ${remoteUserId}`);
+        console.log(`[WebRTC] Track ID: ${event.track.id}, ReadyState: ${event.track.readyState}, Enabled: ${event.track.enabled}`);
+        console.log(`[WebRTC] Event streams:`, event.streams);
+        console.log(`[WebRTC] My role: ${myRole}, Remote user: ${remoteUserId}`);
         
-        // For controllers, set the host's stream.
+        // For controllers, set the host's stream
         if (myRole === "controller") {
           let stream: MediaStream | null = null;
           
           if (event.streams && event.streams[0]) {
             stream = event.streams[0];
-            console.log("Setting remote stream for controller from event streams");
+            console.log(`[WebRTC] Using stream from event.streams[0], tracks: ${stream.getTracks().length}`);
           } else {
             // Fallback: create stream from track
             stream = new MediaStream([event.track]);
-            console.log("Creating new stream from track for controller");
+            console.log(`[WebRTC] Created new stream from track`);
           }
           
           if (stream) {
+            // Ensure track is enabled
+            event.track.enabled = true;
+            
+            // Store in record
             record.remoteStream = stream;
+            
+            console.log(`[WebRTC] Setting remote stream with ${stream.getTracks().length} tracks`);
+            console.log(`[WebRTC] Stream tracks:`, stream.getTracks().map(t => `${t.kind}:${t.id}:${t.enabled}:${t.readyState}`));
+            
+            // Update React state
             setRemoteStream(stream);
             
-            // Force video element update after a short delay
-            setTimeout(() => {
+            // Force video element update with multiple attempts
+            const updateVideoElement = () => {
               const videoElement = document.querySelector('video[data-remote="true"]') as HTMLVideoElement;
-              if (videoElement && stream) {
+              if (videoElement) {
+                console.log(`[WebRTC] Updating video element, current srcObject:`, videoElement.srcObject);
                 videoElement.srcObject = stream;
-                videoElement.play().catch(err => console.warn("Video play failed:", err));
-                console.log("Forced video element update with new stream");
+                videoElement.muted = false;
+                videoElement.autoplay = true;
+                videoElement.playsInline = true;
+                
+                // Force play
+                videoElement.play().then(() => {
+                  console.log(`[WebRTC] Video playing successfully`);
+                }).catch(err => {
+                  console.error(`[WebRTC] Video play failed:`, err);
+                });
+                
+                console.log(`[WebRTC] Video element updated - width: ${videoElement.videoWidth}, height: ${videoElement.videoHeight}`);
+              } else {
+                console.warn(`[WebRTC] Video element with data-remote="true" not found`);
               }
-            }, 100);
+            };
+            
+            // Try multiple times to ensure the video element is updated
+            updateVideoElement();
+            setTimeout(updateVideoElement, 100);
+            setTimeout(updateVideoElement, 500);
+            setTimeout(updateVideoElement, 1000);
+            
+            // Also trigger a re-render by updating a timestamp
+            setTimeout(() => {
+              console.log(`[WebRTC] Triggering additional stream update for controller`);
+              setRemoteStream(prev => prev === stream ? new MediaStream(stream.getTracks()) : stream);
+            }, 200);
           }
         }
       };
 
-      // Setup data channel
+      // Enhanced data channel setup
       if (asOfferer) {
-        const dc = pc.createDataChannel("control", { ordered: true });
+        const dc = pc.createDataChannel("control", { 
+          ordered: true,
+          maxRetransmits: 3,
+          maxRetransmitTime: 1000
+        });
         record.dc = dc;
+        
         dc.onopen = () => {
           console.log("Data channel opened (offerer) with", remoteUserId);
+          // Send initial control capability message
+          const capabilityMsg = {
+            type: "capability",
+            role: myRole,
+            features: ["mouse", "keyboard", "clipboard", "file-transfer"]
+          };
+          dc.send(JSON.stringify(capabilityMsg));
         };
+        
         dc.onclose = () => {
           console.log("Data channel closed (offerer) with", remoteUserId);
         };
+        
+        dc.onerror = (error) => {
+          console.error("Data channel error (offerer):", error);
+        };
+        
         dc.onmessage = (e) => {
           try {
             const msg = JSON.parse(e.data) as ControlMessage;
+            console.log("Received data channel message:", msg.type, "from", remoteUserId);
             handleDataMessage(msg, remoteUserId);
           } catch (err) {
             console.error("Failed to parse data channel message:", err);
@@ -513,15 +602,30 @@ export default function SessionRoom() {
           record.dc = event.channel;
           const dc = event.channel;
           console.log("Data channel received (answerer) from", remoteUserId);
+          
           dc.onopen = () => {
             console.log("Data channel opened (answerer) with", remoteUserId);
+            // Send initial control capability message
+            const capabilityMsg = {
+              type: "capability",
+              role: myRole,
+              features: ["mouse", "keyboard", "clipboard", "file-transfer"]
+            };
+            dc.send(JSON.stringify(capabilityMsg));
           };
+          
           dc.onclose = () => {
             console.log("Data channel closed (answerer) with", remoteUserId);
           };
+          
+          dc.onerror = (error) => {
+            console.error("Data channel error (answerer):", error);
+          };
+          
           dc.onmessage = (e) => {
             try {
               const msg = JSON.parse(e.data) as ControlMessage;
+              console.log("Received data channel message:", msg.type, "from", remoteUserId);
               handleDataMessage(msg, remoteUserId);
             } catch (err) {
               console.error("Failed to parse data channel message:", err);
@@ -532,7 +636,7 @@ export default function SessionRoom() {
 
       return record;
     },
-    [handleDataMessage, publishSignal, updateConnectionIndicators, myRole, hostParticipant]
+    [handleDataMessage, publishSignal, updateConnectionIndicators, myRole, hostParticipant, currentSession, backend]
   );
 
   // Add tracks to existing connections and prepare for renegotiation
@@ -555,29 +659,48 @@ export default function SessionRoom() {
 
   const createAndSendOfferTo = useCallback(
     async (remoteUserId: string) => {
-      console.log("Creating offer to:", remoteUserId);
+      console.log(`[WebRTC] Creating offer to: ${remoteUserId} (myRole: ${myRole})`);
       const rec = await ensurePeerConnection(remoteUserId, true);
       
       try {
         // If host has a local stream, ensure tracks are added before creating offer
         if (myRole === "host" && localStream) {
-          console.log("Host: Adding tracks before creating offer");
+          console.log(`[WebRTC] Host: Adding ${localStream.getTracks().length} tracks before creating offer`);
+          
+          // Remove any existing tracks first to avoid duplicates
+          const existingSenders = rec.pc.getSenders();
+          for (const sender of existingSenders) {
+            if (sender.track) {
+              console.log(`[WebRTC] Removing existing track: ${sender.track.kind}`);
+              rec.pc.removeTrack(sender);
+            }
+          }
+          
+          // Add all tracks from local stream
           localStream.getTracks().forEach((track) => {
             try {
-              console.log(`Adding track to offer: ${track.kind} (${track.id})`);
+              console.log(`[WebRTC] Adding track to offer: ${track.kind} (${track.id}) enabled: ${track.enabled} readyState: ${track.readyState}`);
               rec.pc.addTrack(track, localStream);
             } catch (error) {
-              console.error("Failed to add track:", error);
+              console.error(`[WebRTC] Failed to add track:`, error);
             }
           });
+          
+          console.log(`[WebRTC] Total senders after adding tracks: ${rec.pc.getSenders().length}`);
         }
         
-        const offer = await rec.pc.createOffer();
+        const offer = await rec.pc.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true
+        });
+        
+        console.log(`[WebRTC] Created offer with ${offer.sdp?.split('m=').length - 1} media sections`);
+        
         await rec.pc.setLocalDescription(offer);
         await publishSignal("offer", offer, remoteUserId);
-        console.log("Offer sent to:", remoteUserId);
+        console.log(`[WebRTC] Offer sent to: ${remoteUserId}`);
       } catch (err) {
-        console.error("Failed to create/send offer:", err);
+        console.error(`[WebRTC] Failed to create/send offer:`, err);
         toast({
           variant: "destructive",
           title: "Connection error",
@@ -590,11 +713,12 @@ export default function SessionRoom() {
 
   const handleOffer = useCallback(
     async (senderUserId: string, offer: RTCSessionDescriptionInit) => {
-      console.log("Received offer from:", senderUserId);
+      console.log(`[WebRTC] Received offer from: ${senderUserId} (myRole: ${myRole})`);
+      console.log(`[WebRTC] Offer SDP contains ${offer.sdp?.split('m=').length - 1} media sections`);
       
       // Host must have a local stream before answering; if not, queue the offer.
       if (myRole === "host" && !localStream) {
-        console.log("Host has no local stream, queuing offer");
+        console.log(`[WebRTC] Host has no local stream, queuing offer from ${senderUserId}`);
         pendingOffersRef.current.set(senderUserId, offer);
         toast({
           title: "Connection request",
@@ -606,26 +730,42 @@ export default function SessionRoom() {
       const rec = await ensurePeerConnection(senderUserId, false);
       try {
         await rec.pc.setRemoteDescription(new RTCSessionDescription(offer));
+        console.log(`[WebRTC] Set remote description for ${senderUserId}`);
         
         // If host has a local stream, add tracks before creating answer
         if (myRole === "host" && localStream) {
-          console.log("Host: Adding tracks before creating answer");
+          console.log(`[WebRTC] Host: Adding ${localStream.getTracks().length} tracks before creating answer`);
+          
+          // Remove any existing tracks first
+          const existingSenders = rec.pc.getSenders();
+          for (const sender of existingSenders) {
+            if (sender.track) {
+              console.log(`[WebRTC] Removing existing track: ${sender.track.kind}`);
+              rec.pc.removeTrack(sender);
+            }
+          }
+          
+          // Add all tracks from local stream
           localStream.getTracks().forEach((track) => {
             try {
-              console.log(`Adding track to answer: ${track.kind} (${track.id})`);
+              console.log(`[WebRTC] Adding track to answer: ${track.kind} (${track.id}) enabled: ${track.enabled} readyState: ${track.readyState}`);
               rec.pc.addTrack(track, localStream);
             } catch (error) {
-              console.error("Failed to add track:", error);
+              console.error(`[WebRTC] Failed to add track to answer:`, error);
             }
           });
+          
+          console.log(`[WebRTC] Total senders after adding tracks: ${rec.pc.getSenders().length}`);
         }
         
         const answer = await rec.pc.createAnswer();
+        console.log(`[WebRTC] Created answer with ${answer.sdp?.split('m=').length - 1} media sections`);
+        
         await rec.pc.setLocalDescription(answer);
         await publishSignal("answer", answer, senderUserId);
-        console.log("Answer sent to:", senderUserId);
+        console.log(`[WebRTC] Answer sent to: ${senderUserId}`);
       } catch (err) {
-        console.error("Failed to handle offer:", err);
+        console.error(`[WebRTC] Failed to handle offer from ${senderUserId}:`, err);
         toast({
           variant: "destructive",
           title: "Connection error",
@@ -670,38 +810,83 @@ export default function SessionRoom() {
     setIsStartingShare(true);
     try {
       console.log("Starting screen share...");
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { 
-          frameRate: { ideal: 30, max: 60 },
-          width: { ideal: 1920, max: 1920 },
-          height: { ideal: 1080, max: 1080 },
-        },
-        audio: true,
-      });
+      
+      // Get optimal constraints from screen share optimizer
+      const optimizer = ScreenShareOptimizer.getInstance();
+      const constraints = await optimizer.getOptimalConstraints();
+      
+      console.log("Using optimized constraints:", constraints);
+      
+      const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
       
       console.log("Screen share stream created with tracks:", stream.getTracks().map(t => `${t.kind}:${t.id}`));
       setLocalStream(stream);
 
-      // Add tracks to all existing connections
-      addTracksToConnections(stream);
+      console.log(`[ScreenShare] Stream created with ${stream.getTracks().length} tracks`);
+      stream.getTracks().forEach(track => {
+        console.log(`[ScreenShare] Track: ${track.kind} (${track.id}) enabled: ${track.enabled} readyState: ${track.readyState}`);
+      });
+
+      // Optimize the stream for all existing connections
+      for (const [userId, record] of connectionsRef.current) {
+        await optimizer.optimizeStream(stream, record.pc);
+      }
+
+      // Add tracks to all existing connections with enhanced logging
+      console.log(`[ScreenShare] Adding tracks to ${connectionsRef.current.size} existing connections`);
+      connectionsRef.current.forEach((record, userId) => {
+        console.log(`[ScreenShare] Processing connection with: ${userId}, State: ${record.pc.signalingState}`);
+        
+        // Remove existing tracks first to avoid duplicates
+        const existingSenders = record.pc.getSenders();
+        existingSenders.forEach(sender => {
+          if (sender.track) {
+            console.log(`[ScreenShare] Removing existing track: ${sender.track.kind} from ${userId}`);
+            record.pc.removeTrack(sender);
+          }
+        });
+        
+        // Add new tracks from the stream
+        stream.getTracks().forEach((track) => {
+          try {
+            console.log(`[ScreenShare] Adding track: ${track.kind} (${track.id}) to connection with ${userId}`);
+            record.pc.addTrack(track, stream);
+          } catch (error) {
+            console.error(`[ScreenShare] Failed to add track to connection with ${userId}:`, error);
+          }
+        });
+        
+        console.log(`[ScreenShare] Connection ${userId} now has ${record.pc.getSenders().length} senders`);
+      });
 
       // Create new offers with the tracks
       const connectionPromises = Array.from(connectionsRef.current.entries()).map(
         async ([userId, record]) => {
+          console.log(`[ScreenShare] Creating renegotiation offer for ${userId}, state: ${record.pc.signalingState}`);
+          
           if (record.pc.signalingState === "stable") {
-            console.log(`Creating new offer with tracks for ${userId}`);
             try {
-              const offer = await record.pc.createOffer();
+              const offer = await record.pc.createOffer({
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true
+              });
+              
+              console.log(`[ScreenShare] Created renegotiation offer for ${userId} with ${offer.sdp?.split('m=').length - 1} media sections`);
+              
               await record.pc.setLocalDescription(offer);
               await publishSignal("offer", offer, userId);
+              console.log(`[ScreenShare] Renegotiation offer sent to ${userId}`);
             } catch (error) {
-              console.error(`Failed to create offer for ${userId}:`, error);
+              console.error(`[ScreenShare] Failed to create renegotiation offer for ${userId}:`, error);
             }
+          } else {
+            console.log(`[ScreenShare] Skipping renegotiation for ${userId} - signaling state: ${record.pc.signalingState}`);
           }
         }
       );
 
       await Promise.all(connectionPromises);
+      console.log(`[ScreenShare] Renegotiation completed for all connections`);
 
       toast({
         title: "Screen sharing started",
@@ -801,6 +986,9 @@ export default function SessionRoom() {
   const sendFile = useCallback(
     async (file: File) => {
       if (!user) return;
+      
+      console.log(`[FileTransfer] Starting file transfer: ${file.name} (${file.size} bytes)`);
+      
       const id = `${user.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const chunkSize = 64 * 1024; // 64KB
       const totalChunks = Math.ceil(file.size / chunkSize);
@@ -822,6 +1010,8 @@ export default function SessionRoom() {
         return;
       }
 
+      console.log(`[FileTransfer] Sending to ${targets.length} recipients: ${targets.join(', ')}`);
+
       const meta: FileMetaMessage = {
         type: "file-meta",
         id,
@@ -831,12 +1021,30 @@ export default function SessionRoom() {
         fromUserId: user.id,
       };
 
-      // Send meta
-      targets.forEach((t) => sendDataTo(t, meta));
+      // Send meta to all targets
+      let metaSent = 0;
+      targets.forEach((t) => {
+        if (sendDataTo(t, meta)) {
+          metaSent++;
+        }
+      });
 
-      // Send chunks
+      if (metaSent === 0) {
+        toast({
+          variant: "destructive",
+          title: "Transfer failed",
+          description: "No data channels are ready for file transfer.",
+        });
+        return;
+      }
+
+      console.log(`[FileTransfer] Meta sent to ${metaSent}/${targets.length} recipients`);
+
+      // Send chunks with progress tracking
       let offset = 0;
       let index = 0;
+      let successfulChunks = 0;
+
       while (offset < file.size) {
         const slice = file.slice(offset, offset + chunkSize);
         const arrayBuf = await slice.arrayBuffer();
@@ -847,10 +1055,29 @@ export default function SessionRoom() {
           index,
           dataB64,
         };
-        targets.forEach((t) => sendDataTo(t, chunkMsg));
+
+        let chunkSent = 0;
+        targets.forEach((t) => {
+          if (sendDataTo(t, chunkMsg)) {
+            chunkSent++;
+          }
+        });
+
+        if (chunkSent > 0) {
+          successfulChunks++;
+        }
+
         offset += chunkSize;
         index++;
+
+        // Show progress for large files
+        if (file.size > 1024 * 1024 && index % 16 === 0) { // Every 1MB for files > 1MB
+          const progress = Math.round((offset / file.size) * 100);
+          console.log(`[FileTransfer] Progress: ${progress}% (${index}/${totalChunks} chunks)`);
+        }
       }
+
+      console.log(`[FileTransfer] Sent ${successfulChunks}/${totalChunks} chunks successfully`);
 
       // Send complete
       const complete: FileCompleteMessage = {
@@ -858,12 +1085,27 @@ export default function SessionRoom() {
         id,
         totalChunks,
       };
-      targets.forEach((t) => sendDataTo(t, complete));
-
-      toast({
-        title: "File sent",
-        description: `Sent "${file.name}" to ${targets.length} recipient(s).`,
+      
+      let completeSent = 0;
+      targets.forEach((t) => {
+        if (sendDataTo(t, complete)) {
+          completeSent++;
+        }
       });
+
+      if (completeSent > 0) {
+        toast({
+          title: "File sent",
+          description: `Sent "${file.name}" (${Math.round(file.size / 1024)} KB) to ${completeSent} recipient(s).`,
+        });
+        console.log(`[FileTransfer] Transfer completed: ${file.name}`);
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Transfer incomplete",
+          description: "File transfer may have failed. Check data channel connections.",
+        });
+      }
     },
     [hostParticipant, myRole, participants, sendDataTo, toast, user]
   );
@@ -903,19 +1145,27 @@ export default function SessionRoom() {
 
     const handleNewParticipant = async (raw: any) => {
       const participant = mapParticipant(raw);
+      console.log(`[SessionRoom] Participant update: ${participant.userId} (${participant.role}) - ${participant.status}`);
       updateParticipant(participant);
 
       // If controller and a host joined, initiate offer to host.
       if (myRole === "controller" && participant.role === "host" && participant.status === "joined") {
         const exists = connectionsRef.current.has(participant.userId);
         if (!exists) {
-          console.log("Host joined, creating offer");
+          console.log(`[SessionRoom] Controller detected host joined: ${participant.userId}, creating offer`);
           await createAndSendOfferTo(participant.userId);
         }
       }
 
+      // If host and a controller joined, be ready to accept offers
+      if (myRole === "host" && participant.role === "controller" && participant.status === "joined") {
+        console.log(`[SessionRoom] Host detected controller joined: ${participant.userId}`);
+        // Host doesn't need to initiate, controllers will send offers
+      }
+
       // If participant left, tear down connection.
       if (participant.status === "left") {
+        console.log(`[SessionRoom] Participant left: ${participant.userId}, cleaning up connection`);
         const rec = connectionsRef.current.get(participant.userId);
         if (rec) {
           try {
@@ -932,6 +1182,8 @@ export default function SessionRoom() {
           } catch {}
           connectionsRef.current.delete(participant.userId);
         }
+        // Remove from participants list
+        removeParticipant(participant.userId);
       }
     };
 
@@ -952,8 +1204,27 @@ export default function SessionRoom() {
         case "ice":
           await handleIce(signal.sender_user_id, payload);
           break;
+        case "session_status_update":
+          handleSessionStatusUpdate(payload);
+          break;
       }
     };
+
+    const handleSessionStatusUpdate = useCallback((payload: any) => {
+      console.log("Received session status update:", payload);
+      
+      if (payload.sessionId === currentSession?.id) {
+        // Update session status
+        setCurrentSession(prev => prev ? { ...prev, status: payload.status } : null);
+        
+        // Show toast notification
+        toast({
+          title: "Session Status Updated",
+          description: `Session is now ${payload.status}`,
+          duration: 3000,
+        });
+      }
+    }, [currentSession?.id, setCurrentSession, toast]);
 
     const unsubscribe = subscribeToSession(sessionId, {
       onSessionUpdate: (updated: any) => {
@@ -988,6 +1259,7 @@ export default function SessionRoom() {
     handleOffer,
     handleAnswer,
     handleIce,
+    handleSessionStatusUpdate,
   ]);
 
   // On initial host presence when controller joins late
@@ -1194,21 +1466,30 @@ export default function SessionRoom() {
         )}
       </div>
 
-      {/* Optional local preview */}
+      {/* Enhanced local preview - larger and better positioned */}
       {localStream && (
-        <div className="mt-8 w-full max-w-2xl">
-          <p className="text-sm text-gray-400 mb-2 text-center">Preview:</p>
+        <div className="mt-8 w-full max-w-4xl">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-gray-400">Your screen preview:</p>
+            <div className="text-xs text-emerald-400 bg-emerald-900/20 px-2 py-1 rounded">
+              🟢 Broadcasting to {participants.filter(p => p.role === 'controller' && p.status === 'joined').length} controller(s)
+            </div>
+          </div>
           <video
             autoPlay
             muted
             playsInline
-            className="w-full rounded-lg border-2 border-gray-600 shadow-xl"
+            className="w-full h-auto max-h-96 rounded-lg border-2 border-emerald-600 shadow-2xl bg-black"
             ref={(el) => {
               if (el && localStream) {
                 el.srcObject = localStream;
+                console.log("Host preview video updated with stream");
               }
             }}
           />
+          <div className="mt-2 text-xs text-gray-500 text-center">
+            Controllers can now view and control your screen
+          </div>
         </div>
       )}
     </div>

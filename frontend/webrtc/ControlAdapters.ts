@@ -11,167 +11,97 @@ export interface ControlAdapter {
   onClipboard(content: string): Promise<void>;
 }
 
+import { NativeDesktopController } from './NativeDesktopController';
+
 /**
  * Browser-based control adapter that simulates remote control
  * This is a fallback when native agent is not available
  */
 export class BrowserEmulatedAdapter implements ControlAdapter {
-  name = "Browser Emulation";
+  name = "Enhanced Browser Control";
   private isInitialized = false;
-  private canvas: HTMLCanvasElement | null = null;
-  private ctx: CanvasRenderingContext2D | null = null;
-  private overlay: HTMLDivElement | null = null;
+  private desktopController: NativeDesktopController;
+
+  constructor() {
+    this.desktopController = new NativeDesktopController();
+  }
 
   async init(): Promise<boolean> {
     try {
-      // Create a hidden canvas for drawing cursor feedback
-      this.canvas = document.createElement('canvas');
-      this.canvas.style.position = 'fixed';
-      this.canvas.style.top = '0';
-      this.canvas.style.left = '0';
-      this.canvas.style.width = '100vw';
-      this.canvas.style.height = '100vh';
-      this.canvas.style.pointerEvents = 'none';
-      this.canvas.style.zIndex = '9999';
-      this.canvas.style.display = 'none';
+      console.log('[BrowserEmulatedAdapter] Initializing enhanced browser control...');
       
-      this.ctx = this.canvas.getContext('2d');
-      if (!this.ctx) {
-        throw new Error('Could not get canvas context');
+      const success = await this.desktopController.initialize();
+      if (success) {
+        this.isInitialized = true;
+        console.log('[BrowserEmulatedAdapter] Enhanced browser control initialized successfully');
+        return true;
+      } else {
+        throw new Error('Desktop controller initialization failed');
       }
-
-      // Create overlay for visual feedback
-      this.overlay = document.createElement('div');
-      this.overlay.style.position = 'fixed';
-      this.overlay.style.top = '0';
-      this.overlay.style.left = '0';
-      this.overlay.style.width = '100vw';
-      this.overlay.style.height = '100vh';
-      this.overlay.style.pointerEvents = 'none';
-      this.overlay.style.zIndex = '9998';
-      this.overlay.style.display = 'none';
-
-      document.body.appendChild(this.canvas);
-      document.body.appendChild(this.overlay);
-
-      this.isInitialized = true;
-      console.log('Browser emulation adapter initialized');
-      return true;
     } catch (error) {
-      console.error('Failed to initialize browser emulation adapter:', error);
+      console.error('[BrowserEmulatedAdapter] Failed to initialize:', error);
       return false;
     }
   }
 
   destroy(): void {
-    if (this.canvas && this.canvas.parentNode) {
-      this.canvas.parentNode.removeChild(this.canvas);
+    if (this.desktopController) {
+      this.desktopController.destroy();
     }
-    if (this.overlay && this.overlay.parentNode) {
-      this.overlay.parentNode.removeChild(this.overlay);
-    }
-    this.canvas = null;
-    this.ctx = null;
-    this.overlay = null;
     this.isInitialized = false;
   }
 
-  private showVisualFeedback(x: number, y: number, action: string): void {
-    if (!this.canvas || !this.ctx || !this.overlay) return;
-
-    // Convert normalized coordinates to screen coordinates
-    const screenX = x * window.innerWidth;
-    const screenY = y * window.innerHeight;
-
-    // Show canvas
-    this.canvas.style.display = 'block';
-    this.overlay.style.display = 'block';
-
-    // Clear canvas
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.canvas.width = window.innerWidth;
-    this.canvas.height = window.innerHeight;
-
-    // Draw cursor
-    this.ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
-    this.ctx.beginPath();
-    this.ctx.arc(screenX, screenY, 12, 0, 2 * Math.PI);
-    this.ctx.fill();
-
-    // Draw inner dot
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    this.ctx.beginPath();
-    this.ctx.arc(screenX, screenY, 4, 0, 2 * Math.PI);
-    this.ctx.fill();
-
-    // Draw action indicator
-    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    this.ctx.fillRect(screenX + 20, screenY - 25, 100, 30);
-    this.ctx.fillStyle = 'white';
-    this.ctx.font = 'bold 14px Arial';
-    this.ctx.fillText(action, screenX + 25, screenY - 5);
-
-    // Hide after a short delay
-    setTimeout(() => {
-      if (this.canvas) this.canvas.style.display = 'none';
-      if (this.overlay) this.overlay.style.display = 'none';
-    }, 1500);
-  }
-
   onMouseMove(x: number, y: number): void {
-    if (!this.isInitialized) return;
-    console.log(`[Host] Mouse move: ${x.toFixed(3)}, ${y.toFixed(3)}`);
-    this.showVisualFeedback(x, y, 'Mouse Move');
+    if (!this.isInitialized || !this.desktopController.isReady()) return;
+    
+    console.log(`[BrowserEmulatedAdapter] Mouse move: ${x.toFixed(3)}, ${y.toFixed(3)}`);
+    this.desktopController.simulateMouseMove(x, y);
   }
 
   onMouseDown(x: number, y: number, button: number): void {
-    if (!this.isInitialized) return;
+    if (!this.isInitialized || !this.desktopController.isReady()) return;
+    
     const buttonName = button === 0 ? 'Left' : button === 1 ? 'Middle' : 'Right';
-    console.log(`[Host] Mouse down: ${buttonName} at ${x.toFixed(3)}, ${y.toFixed(3)}`);
-    this.showVisualFeedback(x, y, `${buttonName} Click`);
+    console.log(`[BrowserEmulatedAdapter] Mouse down: ${buttonName} at ${x.toFixed(3)}, ${y.toFixed(3)}`);
+    this.desktopController.simulateMouseClick(x, y, button, 'down');
   }
 
   onMouseUp(x: number, y: number, button: number): void {
-    if (!this.isInitialized) return;
+    if (!this.isInitialized || !this.desktopController.isReady()) return;
+    
     const buttonName = button === 0 ? 'Left' : button === 1 ? 'Middle' : 'Right';
-    console.log(`[Host] Mouse up: ${buttonName} at ${x.toFixed(3)}, ${y.toFixed(3)}`);
+    console.log(`[BrowserEmulatedAdapter] Mouse up: ${buttonName} at ${x.toFixed(3)}, ${y.toFixed(3)}`);
+    this.desktopController.simulateMouseClick(x, y, button, 'up');
   }
 
   onScroll(deltaX: number, deltaY: number): void {
-    if (!this.isInitialized) return;
-    console.log(`[Host] Scroll: deltaX=${deltaX}, deltaY=${deltaY}`);
-    // Show scroll indicator in center of screen
-    this.showVisualFeedback(0.5, 0.5, `Scroll ${deltaY > 0 ? '↓' : '↑'}`);
+    if (!this.isInitialized || !this.desktopController.isReady()) return;
+    
+    console.log(`[BrowserEmulatedAdapter] Scroll: deltaX=${deltaX}, deltaY=${deltaY}`);
+    this.desktopController.simulateScroll(deltaX, deltaY);
   }
 
   onKeyDown(key: string, code: string): void {
-    if (!this.isInitialized) return;
-    console.log(`[Host] Key down: ${key} (${code})`);
-    // Show key indicator in center of screen
-    this.showVisualFeedback(0.5, 0.3, `Key: ${key}`);
+    if (!this.isInitialized || !this.desktopController.isReady()) return;
+    
+    console.log(`[BrowserEmulatedAdapter] Key down: ${key} (${code})`);
+    this.desktopController.simulateKeyPress(key, code, 'down');
   }
 
   onKeyUp(key: string, code: string): void {
-    if (!this.isInitialized) return;
-    console.log(`[Host] Key up: ${key} (${code})`);
+    if (!this.isInitialized || !this.desktopController.isReady()) return;
+    
+    console.log(`[BrowserEmulatedAdapter] Key up: ${key} (${code})`);
+    this.desktopController.simulateKeyPress(key, code, 'up');
   }
 
   async onClipboard(content: string): Promise<void> {
-    if (!this.isInitialized) return;
-    console.log(`[Host] Clipboard content received: ${content.substring(0, 50)}...`);
+    if (!this.isInitialized || !this.desktopController.isReady()) return;
     
-    try {
-      // Try to write to system clipboard
-      await navigator.clipboard.writeText(content);
-      console.log('[Host] Clipboard content written to system clipboard');
-      
-      // Show visual feedback
-      this.showVisualFeedback(0.5, 0.7, 'Clipboard Synced');
-    } catch (error) {
-      console.error('[Host] Failed to write to clipboard:', error);
-      this.showVisualFeedback(0.5, 0.7, 'Clipboard Failed');
-    }
+    console.log(`[BrowserEmulatedAdapter] Clipboard content received: ${content.substring(0, 50)}...`);
+    await this.desktopController.syncClipboard(content);
   }
+
 }
 
 /**
@@ -179,30 +109,40 @@ export class BrowserEmulatedAdapter implements ControlAdapter {
  * This would interface with a native application for real control
  */
 export class LocalAgentAdapter implements ControlAdapter {
-  name = "Native Agent";
+  name = "Native Agent with Browser Fallback";
   private isInitialized = false;
   private agentWindow: Window | null = null;
   private messageHandler: ((event: MessageEvent) => void) | null = null;
+  private desktopController: NativeDesktopController;
+
+  constructor() {
+    this.desktopController = new NativeDesktopController();
+  }
 
   async init(): Promise<boolean> {
     try {
+      console.log('[LocalAgentAdapter] Initializing native agent adapter...');
+      
+      // Always initialize the desktop controller as fallback
+      await this.desktopController.initialize();
+      
       // Check if native agent is available
-      // In a real implementation, this would check for a native app
       const agentAvailable = await this.checkNativeAgent();
       
       if (!agentAvailable) {
-        console.log('Native agent not available');
-        return false;
+        console.log('[LocalAgentAdapter] Native agent not available, using browser fallback');
+        this.isInitialized = true;
+        return true;
       }
 
       // Set up communication with native agent
       this.setupAgentCommunication();
       
       this.isInitialized = true;
-      console.log('Native agent adapter initialized');
+      console.log('[LocalAgentAdapter] Native agent adapter initialized with fallback');
       return true;
     } catch (error) {
-      console.error('Failed to initialize native agent adapter:', error);
+      console.error('[LocalAgentAdapter] Failed to initialize:', error);
       return false;
     }
   }
@@ -215,7 +155,7 @@ export class LocalAgentAdapter implements ControlAdapter {
       // For now, we'll return true in development to avoid the popup
       if (import.meta.env.DEV) {
         console.log('Development mode: Simulating native agent availability');
-        return true;
+    return true;
       }
       
       // Try to communicate with native agent via postMessage or other mechanism
@@ -245,6 +185,9 @@ export class LocalAgentAdapter implements ControlAdapter {
       window.removeEventListener('message', this.messageHandler);
       this.messageHandler = null;
     }
+    if (this.desktopController) {
+      this.desktopController.destroy();
+    }
     this.agentWindow = null;
     this.isInitialized = false;
   }
@@ -273,44 +216,88 @@ export class LocalAgentAdapter implements ControlAdapter {
 
   onMouseMove(x: number, y: number): void {
     if (!this.isInitialized) return;
+    
+    console.log(`[LocalAgentAdapter] Mouse move: ${x.toFixed(3)}, ${y.toFixed(3)}`);
     this.sendToAgent('mouse-move', { x, y });
+    
+    // Always use browser simulation as fallback
+    if (this.desktopController.isReady()) {
+      this.desktopController.simulateMouseMove(x, y);
+    }
   }
 
   onMouseDown(x: number, y: number, button: number): void {
     if (!this.isInitialized) return;
+    
+    const buttonName = button === 0 ? 'Left' : button === 1 ? 'Middle' : 'Right';
+    console.log(`[LocalAgentAdapter] Mouse down: ${buttonName} at ${x.toFixed(3)}, ${y.toFixed(3)}`);
     this.sendToAgent('mouse-down', { x, y, button });
+    
+    // Always use browser simulation as fallback
+    if (this.desktopController.isReady()) {
+      this.desktopController.simulateMouseClick(x, y, button, 'down');
+    }
   }
 
   onMouseUp(x: number, y: number, button: number): void {
     if (!this.isInitialized) return;
+    
+    const buttonName = button === 0 ? 'Left' : button === 1 ? 'Middle' : 'Right';
+    console.log(`[LocalAgentAdapter] Mouse up: ${buttonName} at ${x.toFixed(3)}, ${y.toFixed(3)}`);
     this.sendToAgent('mouse-up', { x, y, button });
+    
+    // Always use browser simulation as fallback
+    if (this.desktopController.isReady()) {
+      this.desktopController.simulateMouseClick(x, y, button, 'up');
+    }
   }
 
   onScroll(deltaX: number, deltaY: number): void {
     if (!this.isInitialized) return;
+    
+    console.log(`[LocalAgentAdapter] Scroll: deltaX=${deltaX}, deltaY=${deltaY}`);
     this.sendToAgent('scroll', { deltaX, deltaY });
+    
+    // Always use browser simulation as fallback
+    if (this.desktopController.isReady()) {
+      this.desktopController.simulateScroll(deltaX, deltaY);
+    }
   }
 
   onKeyDown(key: string, code: string): void {
     if (!this.isInitialized) return;
+    
+    console.log(`[LocalAgentAdapter] Key down: ${key} (${code})`);
     this.sendToAgent('key-down', { key, code });
+    
+    // Always use browser simulation as fallback
+    if (this.desktopController.isReady()) {
+      this.desktopController.simulateKeyPress(key, code, 'down');
+    }
   }
 
   onKeyUp(key: string, code: string): void {
     if (!this.isInitialized) return;
+    
+    console.log(`[LocalAgentAdapter] Key up: ${key} (${code})`);
     this.sendToAgent('key-up', { key, code });
+    
+    // Always use browser simulation as fallback
+    if (this.desktopController.isReady()) {
+      this.desktopController.simulateKeyPress(key, code, 'up');
+    }
   }
 
   async onClipboard(content: string): Promise<void> {
     if (!this.isInitialized) return;
+    
+    console.log(`[LocalAgentAdapter] Clipboard content received: ${content.substring(0, 50)}...`);
     this.sendToAgent('clipboard', { content });
     
-    // Also update local clipboard as fallback
-    try {
-      await navigator.clipboard.writeText(content);
-      console.log('[Host] Clipboard content written to system clipboard via native agent');
-    } catch (error) {
-      console.error('[Host] Failed to write to clipboard via native agent:', error);
+    // Always use browser simulation as fallback
+    if (this.desktopController.isReady()) {
+      await this.desktopController.syncClipboard(content);
     }
   }
+
 }
