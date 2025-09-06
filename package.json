@@ -6,8 +6,5 @@
   "workspaces": [
     "backend",
     "frontend"
-  ],
-  "dependencies": {
-    "jose": "^6.1.0"
-  }
+  ]
 }
