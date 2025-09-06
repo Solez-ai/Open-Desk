@@ -171,12 +171,12 @@ export default function SessionRoom() {
       
       try {
         console.log("Fetching session details for:", sessionId);
-        const [sess, parts] = await Promise.all([
+      const [sess, parts] = await Promise.all([
           backend.session.getSession({ sessionId }),
           backend.session.listParticipants({ sessionId }),
-        ]);
+      ]);
         console.log("Session fetched successfully:", sess.session);
-        return { session: sess.session, participants: parts.participants };
+      return { session: sess.session, participants: parts.participants };
       } catch (error) {
         console.error("Failed to fetch session:", error);
         throw error;
@@ -228,11 +228,11 @@ export default function SessionRoom() {
         setControlAdapterLabel(`${fallback.name}`);
         // Only show toast in development mode
         if (import.meta.env.DEV) {
-          toast({
+        toast({
             title: "Using enhanced browser control",
             description: "Remote control with visual feedback enabled.",
             duration: 3000,
-          });
+        });
         }
       } else {
         if (destroyed) return;
@@ -240,11 +240,11 @@ export default function SessionRoom() {
         setControlAdapterLabel(`${native.name}`);
         // Only show toast in development mode
         if (import.meta.env.DEV) {
-          toast({
+        toast({
             title: "Native agent with browser fallback",
-            description: "Full remote control enabled.",
+          description: "Full remote control enabled.",
             duration: 3000,
-          });
+        });
         }
       }
     }
@@ -364,7 +364,7 @@ export default function SessionRoom() {
               await controlAdapterRef.current.onClipboard(content);
             } else {
               console.log(`[Clipboard] Using browser clipboard API`);
-              await navigator.clipboard.writeText(content);
+            await navigator.clipboard.writeText(content);
             }
             
             toast({
@@ -562,11 +562,11 @@ export default function SessionRoom() {
         if (myRole === "controller") {
           let stream: MediaStream | null = null;
           
-          if (event.streams && event.streams[0]) {
+        if (event.streams && event.streams[0]) {
             stream = event.streams[0];
             console.log(`[WebRTC] Using stream from event.streams[0], tracks: ${stream.getTracks().length}`);
-          } else {
-            // Fallback: create stream from track
+        } else {
+          // Fallback: create stream from track
             stream = new MediaStream([event.track]);
             console.log(`[WebRTC] Created new stream from track`);
           }
@@ -576,13 +576,13 @@ export default function SessionRoom() {
             event.track.enabled = true;
             
             // Store in record
-            record.remoteStream = stream;
+          record.remoteStream = stream;
             
             console.log(`[WebRTC] Setting remote stream with ${stream.getTracks().length} tracks`);
             console.log(`[WebRTC] Stream tracks:`, stream.getTracks().map(t => `${t.kind}:${t.id}:${t.enabled}:${t.readyState}`));
             
             // Update React state
-            setRemoteStream(stream);
+          setRemoteStream(stream);
             
             // Force video element update with multiple attempts
             const updateVideoElement = () => {
@@ -626,8 +626,11 @@ export default function SessionRoom() {
       if (asOfferer) {
         const dc = pc.createDataChannel("control", { 
           ordered: true,
-          maxRetransmits: 3,
-          maxRetransmitTime: 1000
+          // Reliable with partial reliability fallback for large transfers
+          // Many browsers ignore both maxRetransmits and maxRetransmitTime when ordered:true
+          // but we include conservative values for compatibility.
+          maxRetransmits: 5,
+          maxRetransmitTime: 3000
         });
         record.dc = dc;
         
@@ -896,23 +899,23 @@ export default function SessionRoom() {
 
       // Add tracks to all existing connections with enhanced logging
       console.log(`[ScreenShare] Adding tracks to ${connectionsRef.current.size} existing connections`);
-      connectionsRef.current.forEach((record, userId) => {
+    connectionsRef.current.forEach((record, userId) => {
         console.log(`[ScreenShare] Processing connection with: ${userId}, State: ${record.pc.signalingState}`);
         
         // Remove existing tracks first to avoid duplicates
         const existingSenders = record.pc.getSenders();
         existingSenders.forEach(sender => {
-          if (sender.track) {
+        if (sender.track) {
             console.log(`[ScreenShare] Removing existing track: ${sender.track.kind} from ${userId}`);
-            record.pc.removeTrack(sender);
-          }
-        });
-        
+          record.pc.removeTrack(sender);
+        }
+      });
+      
         // Add new tracks from the stream
-        stream.getTracks().forEach((track) => {
+      stream.getTracks().forEach((track) => {
           try {
             console.log(`[ScreenShare] Adding track: ${track.kind} (${track.id}) to connection with ${userId}`);
-            record.pc.addTrack(track, stream);
+        record.pc.addTrack(track, stream);
           } catch (error) {
             console.error(`[ScreenShare] Failed to add track to connection with ${userId}:`, error);
           }
@@ -926,8 +929,8 @@ export default function SessionRoom() {
         async ([userId, record]) => {
           console.log(`[ScreenShare] Creating renegotiation offer for ${userId}, state: ${record.pc.signalingState}`);
           
-          if (record.pc.signalingState === "stable") {
-            try {
+      if (record.pc.signalingState === "stable") {
+        try {
               const offer = await record.pc.createOffer({
                 offerToReceiveAudio: true,
                 offerToReceiveVideo: true
@@ -935,13 +938,13 @@ export default function SessionRoom() {
               
               console.log(`[ScreenShare] Created renegotiation offer for ${userId} with ${offer.sdp?.split('m=').length - 1} media sections`);
               
-              await record.pc.setLocalDescription(offer);
-              await publishSignal("offer", offer, userId);
+          await record.pc.setLocalDescription(offer);
+          await publishSignal("offer", offer, userId);
               console.log(`[ScreenShare] Renegotiation offer sent to ${userId}`);
             } catch (error) {
               console.error(`[ScreenShare] Failed to create renegotiation offer for ${userId}:`, error);
-            }
-          } else {
+        }
+      } else {
             console.log(`[ScreenShare] Skipping renegotiation for ${userId} - signaling state: ${record.pc.signalingState}`);
           }
         }
@@ -1014,7 +1017,7 @@ export default function SessionRoom() {
       return true;
     } else {
       console.warn("Cannot send data to", remoteUserId, "- data channel not ready");
-      return false;
+    return false;
     }
   }, []);
 
@@ -1118,6 +1121,16 @@ export default function SessionRoom() {
           dataB64,
         };
 
+        // Backpressure handling: wait if bufferedAmount is too high
+        for (const [userId, record] of connectionsRef.current.entries()) {
+          const dc = record.dc;
+          if (dc && dc.readyState === "open") {
+            while (dc.bufferedAmount > 2 * 1024 * 1024) { // 2MB threshold
+              await new Promise((res) => setTimeout(res, 50));
+            }
+          }
+        }
+
         let chunkSent = 0;
         targets.forEach((t) => {
           if (sendDataTo(t, chunkMsg)) {
@@ -1156,8 +1169,8 @@ export default function SessionRoom() {
       });
 
       if (completeSent > 0) {
-        toast({
-          title: "File sent",
+      toast({
+        title: "File sent",
           description: `Sent "${file.name}" (${Math.round(file.size / 1024)} KB) to ${completeSent} recipient(s).`,
         });
         console.log(`[FileTransfer] Transfer completed: ${file.name}`);
@@ -1579,8 +1592,8 @@ export default function SessionRoom() {
         </div>
         
         <h2 className="text-3xl font-bold text-center">
-          {localStream ? "You are sharing your screen" : "You are hosting this session"}
-        </h2>
+        {localStream ? "You are sharing your screen" : "You are hosting this session"}
+      </h2>
         
         <div className="bg-gray-700/50 rounded-lg p-4 max-w-md mx-auto">
           <p className="text-sm text-gray-300 mb-2">Session Code:</p>
@@ -1589,25 +1602,25 @@ export default function SessionRoom() {
           </div>
         </div>
 
-        {!localStream ? (
+      {!localStream ? (
           <div className="space-y-4">
             <Button 
               onClick={startScreenShare} 
               disabled={isStartingShare}
               className="bg-emerald-600 hover:bg-emerald-600/90 text-white px-8 py-3 text-lg"
             >
-              {isStartingShare ? (
-                <>
+          {isStartingShare ? (
+            <>
                   <Play className="h-5 w-5 mr-3 animate-pulse" />
-                  Starting...
-                </>
-              ) : (
-                <>
+              Starting...
+            </>
+          ) : (
+            <>
                   <Play className="h-5 w-5 mr-3" />
-                  Start screen sharing
-                </>
-              )}
-            </Button>
+              Start screen sharing
+            </>
+          )}
+        </Button>
             <p className="text-sm text-gray-300">
               Controllers will connect automatically when you start sharing.
             </p>
@@ -1620,8 +1633,8 @@ export default function SessionRoom() {
               className="px-8 py-3 text-lg"
             >
               <Square className="h-5 w-5 mr-3" />
-              Stop screen sharing
-            </Button>
+          Stop screen sharing
+        </Button>
             <div className="text-center space-y-2">
               <p className="text-emerald-400 font-semibold">
                 🟢 Your screen is being shared
@@ -1651,18 +1664,18 @@ export default function SessionRoom() {
               🟢 Broadcasting to {participants.filter(p => p.role === 'controller' && p.status === 'joined').length} controller(s)
             </div>
           </div>
-          <video
-            autoPlay
-            muted
-            playsInline
+        <video
+          autoPlay
+          muted
+          playsInline
             className="w-full h-auto max-h-96 rounded-lg border-2 border-emerald-600 shadow-2xl bg-black"
-            ref={(el) => {
-              if (el && localStream) {
-                el.srcObject = localStream;
+          ref={(el) => {
+            if (el && localStream) {
+              el.srcObject = localStream;
                 console.log("Host preview video updated with stream");
-              }
-            }}
-          />
+            }
+          }}
+        />
           <div className="mt-2 text-xs text-gray-500 text-center">
             Controllers can now view and control your screen
           </div>
@@ -1701,9 +1714,9 @@ export default function SessionRoom() {
                 <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
                 <p className="text-yellow-400 font-semibold">Waiting for host...</p>
               </div>
-              <p className="text-sm text-gray-300">
-                The host needs to start screen sharing before you can view their screen.
-              </p>
+          <p className="text-sm text-gray-300">
+            The host needs to start screen sharing before you can view their screen.
+          </p>
             </div>
 
             <div className="mt-6 p-4 bg-blue-600/10 border border-blue-500/20 rounded-lg">
@@ -1740,12 +1753,12 @@ export default function SessionRoom() {
           )}
         </div>
 
-        <RemoteDisplay
-          remoteStream={remoteStream}
-          sendControlMessage={sendData}
-          isControlEnabled={isControlEnabled}
-          cursorName={controllerName}
-        />
+      <RemoteDisplay
+        remoteStream={remoteStream}
+        sendControlMessage={sendData}
+        isControlEnabled={isControlEnabled}
+        cursorName={controllerName}
+      />
       </div>
     );
   };
