@@ -282,6 +282,19 @@ export default function SessionRoom() {
     }
   }, [setConnectionQuality, setIsConnected]);
 
+  // Handle session status update (top-level to avoid runtime reference errors)
+  const handleSessionStatusUpdate = useCallback((payload: any) => {
+    console.log("Received session status update:", payload);
+    if (payload.sessionId === currentSession?.id) {
+      setCurrentSession(prev => prev ? { ...prev, status: payload.status } : null);
+      toast({
+        title: "Session Status Updated",
+        description: `Session is now ${payload.status}`,
+        duration: 3000,
+      });
+    }
+  }, [currentSession?.id, setCurrentSession, toast]);
+
   // Handle incoming data messages (controller -> host and file transfers, clipboard)
   const handleDataMessage = useCallback(
     async (message: any, senderUserId?: string) => {
