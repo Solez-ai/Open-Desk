@@ -32,6 +32,7 @@ type PCRecord = {
   remoteStream: MediaStream | null;
   bitrateController?: AdaptiveBitrateController;
   connectionMonitor?: ConnectionMonitor;
+  outgoingQueue?: ControlMessage[]; // messages queued until data channel opens
 };
 
 type SupabaseParticipantRow = {
@@ -692,6 +693,7 @@ export default function SessionRoom() {
           maxRetransmitTime: 3000
         });
         record.dc = dc;
+        record.outgoingQueue = [];
         
         dc.onopen = () => {
           console.log("Data channel opened (offerer) with", remoteUserId);
@@ -702,6 +704,14 @@ export default function SessionRoom() {
             features: ["mouse", "keyboard", "clipboard", "file-transfer"]
           };
           dc.send(JSON.stringify(capabilityMsg));
+          // Flush any queued messages
+          if (record.outgoingQueue && record.outgoingQueue.length > 0) {
+            console.log(`[DC] Flushing ${record.outgoingQueue.length} queued messages to`, remoteUserId);
+            for (const msg of record.outgoingQueue) {
+              try { dc.send(JSON.stringify(msg)); } catch (e) { console.warn("Failed to send queued message", e); }
+            }
+            record.outgoingQueue = [];
+          }
         };
         
         dc.onclose = () => {
@@ -726,6 +736,7 @@ export default function SessionRoom() {
           record.dc = event.channel;
           const dc = event.channel;
           console.log("Data channel received (answerer) from", remoteUserId);
+          record.outgoingQueue = [];
           
           dc.onopen = () => {
             console.log("Data channel opened (answerer) with", remoteUserId);
@@ -736,6 +747,13 @@ export default function SessionRoom() {
               features: ["mouse", "keyboard", "clipboard", "file-transfer"]
             };
             dc.send(JSON.stringify(capabilityMsg));
+            if (record.outgoingQueue && record.outgoingQueue.length > 0) {
+              console.log(`[DC] Flushing ${record.outgoingQueue.length} queued messages to`, remoteUserId);
+              for (const msg of record.outgoingQueue) {
+                try { dc.send(JSON.stringify(msg)); } catch (e) { console.warn("Failed to send queued message", e); }
+              }
+              record.outgoingQueue = [];
+            }
           };
           
           dc.onclose = () => {
@@ -1074,9 +1092,14 @@ export default function SessionRoom() {
       console.log("Sending data message to", remoteUserId, ":", message.type);
       rec.dc.send(JSON.stringify(message));
       return true;
+    } else if (rec) {
+      console.warn("Data channel not ready; queueing message for", remoteUserId, message.type);
+      if (!rec.outgoingQueue) rec.outgoingQueue = [];
+      rec.outgoingQueue.push(message);
+      return false;
     } else {
-      console.warn("Cannot send data to", remoteUserId, "- data channel not ready");
-    return false;
+      console.warn("Cannot send data to", remoteUserId, "- no connection record");
+      return false;
     }
   }, []);
 

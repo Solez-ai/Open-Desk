@@ -42,6 +42,8 @@ export interface CreateSessionRequest {
   targetUserId?: string;
   allowClipboard?: boolean;
   isPublic?: boolean;
+  // Optional: decide the creator's starting role in the session UI
+  ownerRole?: ParticipantRole; // defaults to "controller" for backwards-compatibility
 }
 
 export interface CreateSessionResponse {

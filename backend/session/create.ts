@@ -34,13 +34,14 @@ export const createSession = api<CreateSessionRequest, CreateSessionResponse>(
       throw APIError.internal("failed to create session", error ?? undefined);
     }
 
-    // Owner joins as controller by default.
+    // Owner joins; allow choosing starting role (default controller for safety)
+    const ownerRole = (req.ownerRole === "host" || req.ownerRole === "controller") ? req.ownerRole : "controller";
     const { data: insertParticipant, error: pErr } = await supabaseAdmin
       .from("session_participants")
       .insert({
         session_id: insertSession.id,
         user_id: auth.userID,
-        role: "controller",
+        role: ownerRole,
         status: "joined",
         connected_at: new Date().toISOString(),
       })
