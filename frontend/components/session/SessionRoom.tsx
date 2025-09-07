@@ -172,12 +172,35 @@ export default function SessionRoom() {
       
       try {
         console.log("Fetching session details for:", sessionId);
-      const [sess, parts] = await Promise.all([
-          backend.session.getSession({ sessionId }),
-          backend.session.listParticipants({ sessionId }),
-      ]);
+        // Always fetch session first
+        const sess = await backend.session.getSession({ sessionId });
+
+        // Try backend participants first, then gracefully fall back to Supabase direct select
+        let initialParticipants: Participant[] = [];
+        try {
+          const parts = await backend.session.listParticipants({ sessionId });
+          initialParticipants = parts.participants;
+        } catch (err) {
+          console.warn("Participants fetch via backend failed, trying Supabase directly:", err);
+          try {
+            if (supabaseClient) {
+              const { data, error } = await supabaseClient
+                .from("session_participants")
+                .select("id, session_id, user_id, role, status, connected_at, disconnected_at, created_at, updated_at")
+                .eq("session_id", sessionId);
+              if (!error && data) {
+                initialParticipants = data.map(mapParticipant);
+              } else if (error) {
+                console.warn("Supabase direct participants fetch failed:", error);
+              }
+            }
+          } catch (e) {
+            console.warn("Supabase direct participants exception:", e);
+          }
+        }
+
         console.log("Session fetched successfully:", sess.session);
-      return { session: sess.session, participants: parts.participants };
+        return { session: sess.session, participants: initialParticipants };
       } catch (error) {
         console.error("Failed to fetch session:", error);
         throw error;
