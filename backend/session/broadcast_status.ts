@@ -55,13 +55,12 @@ export const broadcastStatus = api<BroadcastStatusRequest, BroadcastStatusRespon
       timestamp: new Date().toISOString(),
     };
 
-    // Send to all participants
+    // Send to all participants (recipient is optional to allow broadcast)
     const signalPromises = participants.map(participant =>
       supabaseAdmin.from("signals").insert({
         session_id: req.sessionId,
         sender_user_id: auth.userID,
         recipient_user_id: participant.user_id,
-        // Use generic "status" type to comply with DB CHECK constraint
         type: "status",
         payload: signalData,
       })

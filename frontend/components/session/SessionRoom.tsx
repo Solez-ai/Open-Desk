@@ -193,6 +193,50 @@ export default function SessionRoom() {
     }
   }, [sessionDetail, setCurrentSession, setParticipants]);
 
+  // Fallback participants polling to reinforce realtime (stops once we see at least 2 joined or role-resolved peers)
+  useEffect(() => {
+    if (!sessionId) return;
+    let stopped = false;
+
+    const shouldStop = () => {
+      const joinedCount = participants.filter((p) => p.status === "joined").length;
+      // Stop when at least 2 joined members are present, or when host sees any controller
+      const hasController = participants.some((p) => p.role === "controller" && p.status === "joined");
+      const hasHost = participants.some((p) => p.role === "host" && p.status === "joined");
+      return joinedCount >= 2 || (hasHost && hasController);
+    };
+
+    async function pollOnce() {
+      try {
+        const resp = await backend.session.listParticipants({ sessionId });
+        if (!stopped && resp?.participants) {
+          setParticipants(resp.participants);
+        }
+      } catch (err) {
+        // Non-fatal: realtime will still deliver updates
+        console.warn("Participants poll failed:", err);
+      }
+    }
+
+    // Start a short-lived polling loop until we have a synced view
+    const interval = setInterval(() => {
+      if (shouldStop()) {
+        clearInterval(interval);
+        stopped = true;
+        return;
+      }
+      pollOnce();
+    }, 3000);
+
+    // Kick an immediate poll
+    pollOnce();
+
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+    };
+  }, [backend, sessionId, participants, setParticipants]);
+
   // Setup control adapter when acting as host (attempt native first)
   useEffect(() => {
     let destroyed = false;
@@ -1392,8 +1436,9 @@ export default function SessionRoom() {
     };
 
     const handleSignal = async (signal: any) => {
-      // Only process messages addressed to me.
-      if (!user || signal.recipient_user_id !== user.id) return;
+      // If recipient is null we treat it as a broadcast to the whole session.
+      if (!user) return;
+      if (signal.recipient_user_id && signal.recipient_user_id !== user.id) return;
 
       const payload = signal.payload;
       console.log("Received signal:", signal.type, "from", signal.sender_user_id);
@@ -1660,7 +1705,7 @@ export default function SessionRoom() {
 
       {/* Enhanced local preview - larger and better positioned */}
       {localStream && (
-        <div className="mt-8 w-full max-w-4xl">
+        <div className="mt-8 w-full max-w-6xl">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm text-gray-400">Your screen preview:</p>
             <div className="text-xs text-emerald-400 bg-emerald-900/20 px-2 py-1 rounded">
@@ -1671,7 +1716,7 @@ export default function SessionRoom() {
           autoPlay
           muted
           playsInline
-            className="w-full h-auto max-h-96 rounded-lg border-2 border-emerald-600 shadow-2xl bg-black"
+            className="w-full aspect-video max-h-[70vh] rounded-lg border-2 border-emerald-600 shadow-2xl bg-black object-contain"
           ref={(el) => {
             if (el && localStream) {
               el.srcObject = localStream;
