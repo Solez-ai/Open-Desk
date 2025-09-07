@@ -224,7 +224,6 @@ export default function SessionRoom() {
 
     const shouldStop = () => {
       const joinedCount = participants.filter((p) => p.status === "joined").length;
-      // Stop when at least 2 joined members are present, or when host sees any controller
       const hasController = participants.some((p) => p.role === "controller" && p.status === "joined");
       const hasHost = participants.some((p) => p.role === "host" && p.status === "joined");
       return joinedCount >= 2 || (hasHost && hasController);
@@ -232,17 +231,21 @@ export default function SessionRoom() {
 
     async function pollOnce() {
       try {
-        const resp = await backend.session.listParticipants({ sessionId });
-        if (!stopped && resp?.participants) {
-          setParticipants(resp.participants);
+        if (!supabaseClient) return;
+        const { data, error } = await supabaseClient
+          .from("session_participants")
+          .select("id, session_id, user_id, role, status, connected_at, disconnected_at, created_at, updated_at")
+          .eq("session_id", sessionId);
+        if (!error && data && !stopped) {
+          setParticipants(data.map(mapParticipant));
+        } else if (error) {
+          console.warn("Participants poll (Supabase) failed:", error);
         }
       } catch (err) {
-        // Non-fatal: realtime will still deliver updates
-        console.warn("Participants poll failed:", err);
+        console.warn("Participants poll exception:", err);
       }
     }
 
-    // Start a short-lived polling loop until we have a synced view
     const interval = setInterval(() => {
       if (shouldStop()) {
         clearInterval(interval);
@@ -252,14 +255,13 @@ export default function SessionRoom() {
       pollOnce();
     }, 3000);
 
-    // Kick an immediate poll
     pollOnce();
 
     return () => {
       stopped = true;
       clearInterval(interval);
     };
-  }, [backend, sessionId, participants, setParticipants]);
+  }, [sessionId, participants, setParticipants, supabaseClient]);
 
   // Setup control adapter when acting as host (attempt native first)
   useEffect(() => {

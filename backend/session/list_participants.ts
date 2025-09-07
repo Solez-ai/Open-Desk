@@ -39,25 +39,12 @@ export const listParticipants = api<ListParticipantsRequest, ListParticipantsRes
       }
     }
 
-    // Get participants with profile data using a join
+    // Get participants only (no profile join to avoid schema coupling)
     const { data: participantRows, error: lErr } = await supabaseAdmin
       .from("session_participants")
-      .select(`
-        id,
-        session_id,
-        user_id,
-        role,
-        status,
-        connected_at,
-        disconnected_at,
-        created_at,
-        updated_at,
-        profiles!inner (
-          username,
-          full_name,
-          avatar_url
-        )
-      `)
+      .select(
+        "id, session_id, user_id, role, status, connected_at, disconnected_at, created_at, updated_at"
+      )
       .eq("session_id", req.sessionId);
 
     if (lErr) {
@@ -71,9 +58,9 @@ export const listParticipants = api<ListParticipantsRequest, ListParticipantsRes
       userId: p.user_id,
       role: p.role as "host" | "controller",
       status: p.status as "joined" | "left",
-      username: p.profiles?.username || null,
-      fullName: p.profiles?.full_name || null,
-      avatarUrl: p.profiles?.avatar_url || null,
+      username: null,
+      fullName: null,
+      avatarUrl: null,
       connectedAt: p.connected_at ? new Date(p.connected_at) : null,
       disconnectedAt: p.disconnected_at ? new Date(p.disconnected_at) : null,
       createdAt: new Date(p.created_at),
