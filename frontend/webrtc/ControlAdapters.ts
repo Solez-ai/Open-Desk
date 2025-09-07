@@ -215,7 +215,7 @@ export class LocalAgentAdapter implements ControlAdapter {
       // For now, we'll return true in development to avoid the popup
       if (import.meta.env.DEV) {
         console.log('Development mode: Simulating native agent availability');
-        return true;
+    return true;
       }
       
       // Try to communicate with native agent via postMessage or other mechanism

@@ -422,7 +422,7 @@ export default function SessionRoom() {
               await controlAdapterRef.current.onClipboard(content);
             } else {
               console.log(`[Clipboard] Using browser clipboard API`);
-              await navigator.clipboard.writeText(content);
+            await navigator.clipboard.writeText(content);
             }
             // Prevent auto-sync feedback loops by updating last seen content
             lastClipboardContent.current = content.trim();
@@ -1096,7 +1096,7 @@ export default function SessionRoom() {
       console.warn("Data channel not ready; queueing message for", remoteUserId, message.type);
       if (!rec.outgoingQueue) rec.outgoingQueue = [];
       rec.outgoingQueue.push(message);
-      return false;
+    return false;
     } else {
       console.warn("Cannot send data to", remoteUserId, "- no connection record");
       return false;
