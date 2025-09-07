@@ -72,18 +72,7 @@ const auth = authHandler<AuthParams, AuthData>(async (params) => {
 });
 
 // Configure the API gateway to use the auth handler and permissive CORS for preview hosts.
-export const gw = new Gateway({
-  authHandler: auth,
-  cors: {
-    allowOrigins: [
-      "https://*.encr.app",
-      "https://*.lp.dev",
-      "https://*.frontend.encr.app",
-    ],
-    allowHeaders: ["Authorization", "Content-Type"],
-    allowCredentials: true,
-  },
-});
+export const gw = new Gateway({ authHandler: auth });
 
 // Helper exported for other services if needed later.
 export default auth;
