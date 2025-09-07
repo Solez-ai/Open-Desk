@@ -265,11 +265,11 @@ export class ICEOptimizer {
       const startTime = Date.now();
       
       return new Promise((resolve) => {
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
             results.stun = true;
             results.latency = Date.now() - startTime;
-          pc.close();
+            pc.close();
             resolve(results);
           }
         };

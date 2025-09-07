@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Loader2 } from "lucide-react";
 import { useBackend } from "../../hooks/useBackend";
 import { useToast } from "@/components/ui/use-toast";
@@ -30,7 +29,6 @@ export default function CreateSessionDialog({
   const [name, setName] = useState("");
   const [allowClipboard, setAllowClipboard] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
-  const [ownerRole, setOwnerRole] = useState<"host" | "controller">("controller");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const backend = useBackend();
@@ -45,7 +43,6 @@ export default function CreateSessionDialog({
         name: name.trim() || undefined,
         allowClipboard,
         isPublic,
-        ownerRole,
       });
 
       toast({
@@ -60,7 +57,6 @@ export default function CreateSessionDialog({
       setName("");
       setAllowClipboard(false);
       setIsPublic(false);
-      setOwnerRole("controller");
       
       // Refresh the session list
       onSuccess();
@@ -108,62 +104,6 @@ export default function CreateSessionDialog({
             <p className="text-xs text-muted-foreground">
               A friendly label shown in your dashboard.
             </p>
-          </div>
-
-          <div className="space-y-3">
-            <Label>Start as</Label>
-            <RadioGroup
-              value={ownerRole}
-              onValueChange={(value: "host" | "controller") => setOwnerRole(value)}
-              disabled={isLoading}
-              className="grid grid-cols-2 gap-2"
-            >
-              <label
-                htmlFor="creator-controller"
-                className={`cursor-pointer rounded-lg border p-3 ${
-                  ownerRole === "controller"
-                    ? "border-emerald-500/30 bg-emerald-500/5"
-                    : "border-border"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem
-                    value="controller"
-                    id="creator-controller"
-                    className="data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-600"
-                  />
-                  <div>
-                    <div className="font-medium text-sm">Controller</div>
-                    <div className="text-xs text-muted-foreground">
-                      Control someone else's computer
-                    </div>
-                  </div>
-                </div>
-              </label>
-
-              <label
-                htmlFor="creator-host"
-                className={`cursor-pointer rounded-lg border p-3 ${
-                  ownerRole === "host"
-                    ? "border-emerald-500/30 bg-emerald-500/5"
-                    : "border-border"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem
-                    value="host"
-                    id="creator-host"
-                    className="data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-600"
-                  />
-                  <div>
-                    <div className="font-medium text-sm">Host</div>
-                    <div className="text-xs text-muted-foreground">
-                      Share your screen
-                    </div>
-                  </div>
-                </div>
-              </label>
-            </RadioGroup>
           </div>
 
           <div className="space-y-3">

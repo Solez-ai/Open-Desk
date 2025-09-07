@@ -24,17 +24,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const updateParticipant = useCallback((participant: Participant) => {
     setParticipants(prev => {
-      // Prefer dedupe by userId (stable across reconnects) then by id
-      const byUserIndex = prev.findIndex(p => p.userId === participant.userId);
-      if (byUserIndex >= 0) {
+      const index = prev.findIndex(p => p.id === participant.id);
+      if (index >= 0) {
         const newParticipants = [...prev];
-        newParticipants[byUserIndex] = participant;
-        return newParticipants;
-      }
-      const byIdIndex = prev.findIndex(p => p.id === participant.id);
-      if (byIdIndex >= 0) {
-        const newParticipants = [...prev];
-        newParticipants[byIdIndex] = participant;
+        newParticipants[index] = participant;
         return newParticipants;
       }
       return [...prev, participant];

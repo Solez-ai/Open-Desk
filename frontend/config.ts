@@ -9,26 +9,15 @@ export const APP_NAME = "OpenDesk";
 export const GITHUB_URL = "https://github.com/Solez-ai/Open-Desk";
 
 // WebRTC configuration with optimized ICE servers
-// Allow optional TURN configuration via env for production NAT traversal
-const TURN_URL = import.meta.env.VITE_TURN_URL as string | undefined;
-const TURN_USERNAME = import.meta.env.VITE_TURN_USERNAME as string | undefined;
-const TURN_CREDENTIAL = import.meta.env.VITE_TURN_CREDENTIAL as string | undefined;
-
-export const ICE_SERVERS = (
-  [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    { urls: "stun:stun2.l.google.com:19302" },
-    { urls: "stun:stun3.l.google.com:19302" },
-    { urls: "stun:stun4.l.google.com:19302" },
-    { urls: "stun:global.stun.twilio.com:3478" },
-    { urls: "stun:stun.cloudflare.com:3478" },
-  ] as RTCIceServer[]
-).concat(
-  TURN_URL && TURN_USERNAME && TURN_CREDENTIAL
-    ? [{ urls: TURN_URL, username: TURN_USERNAME, credential: TURN_CREDENTIAL }]
-    : []
-);
+export const ICE_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
+  { urls: "stun:stun3.l.google.com:19302" },
+  { urls: "stun:stun4.l.google.com:19302" },
+  { urls: "stun:global.stun.twilio.com:3478" },
+  { urls: "stun:stun.cloudflare.com:3478" },
+];
 
 // Session settings
 export const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
