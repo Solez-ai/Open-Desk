@@ -52,7 +52,7 @@ export default function SessionRoom() {
   const navigate = useNavigate();
   const backend = useBackend();
   const { toast } = useToast();
-  const { subscribeToSession } = useSupabase();
+  const { subscribeToSession, supabase: supabaseClient } = useSupabase();
   const { user } = useAuth();
   const {
     currentSession,
@@ -1408,7 +1408,7 @@ export default function SessionRoom() {
         clipboardCheckInterval.current = null;
       }
     };
-  }, [currentSession?.allowClipboard, myRole, hostParticipant, participants, sendDataTo]);
+  }, [currentSession?.allowClipboard, myRole, hostParticipant?.userId]);
 
   // Subscribe to realtime updates
   useEffect(() => {
@@ -1507,12 +1507,36 @@ export default function SessionRoom() {
       onSignal: handleSignal,
     });
 
+    // Prefetch any missed signals (offers/answers/ice) from the last 2 minutes
+    (async () => {
+      try {
+        if (!supabaseClient) return;
+        const sinceISO = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+        const { data: rows, error } = await supabaseClient
+          .from("signals")
+          .select("*")
+          .eq("session_id", sessionId)
+          .gte("created_at", sinceISO)
+          .order("created_at", { ascending: true });
+        if (!error && rows) {
+          for (const row of rows) {
+            await handleSignal(row);
+          }
+        } else if (error) {
+          console.warn("Prefetch signals failed:", error);
+        }
+      } catch (e) {
+        console.warn("Prefetch signals exception:", e);
+      }
+    })();
+
     return unsubscribe;
   }, [
     sessionId,
     user,
     myRole,
     subscribeToSession,
+    supabaseClient,
     setCurrentSession,
     updateParticipant,
     createAndSendOfferTo,
